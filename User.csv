@@ -1,0 +1,6 @@
+﻿id;username;password;name;role;createdAt;updatedAt;image;phone;fcmToken
+e88abb75-f8a0-4dcf-b7a6-07bd57a4ab3e;admin@aliminspa.cl;patricio.alimin2026;Admin Alimin;ADMIN;2026-03-17 15:01:02.516;2026-03-17 15:01:02.516;;;
+db1e6577-01b1-4615-b35e-0d50752452f3;marcela.e@aliminspa.cl;marcela.alimin2026;Marcela E;ASESOR;2026-03-17 15:01:02.516;2026-03-17 15:01:02.516;;;
+a6ce92ca-f1a1-4dcf-a042-fda1c31ca485;Orlando.c@aliminspa.cl;orlando.alimin2026;Orlando C;ASESOR;2026-03-17 15:01:02.516;2026-03-17 15:01:02.516;;;
+initial-admin-id;nicolas;nicolas;Nicolas;ADMIN;2026-03-17 14:57:28.286;2026-03-18 15:24:54.622;;;e4NORc2SlfErVdtZdq1uEU:APA91bEQQ3qw3tHDMz0B3UMx7EWzQ7IJxDCWHOn_-kyeZzv7zmdlD-6tegzfx112zxxjtm4EUaL7-HZ2OD1xu7NLfqsCJtSxWO7uFKUdTbmkEZFTwVmPwU0
+77cea468-b4a5-44e6-aaa5-0a3f376affb1;Barbara.a@aliminspa.cl;barbara.alimin2026;Barbara A;ASESOR;2026-03-17 15:01:02.516;2026-03-18 02:39:14.847;;;e4NORc2SlfErVdtZdq1uEU:APA91bEQQ3qw3tHDMz0B3UMx7EWzQ7IJxDCWHOn_-kyeZzv7zmdlD-6tegzfx112zxxjtm4EUaL7-HZ2OD1xu7NLfqsCJtSxWO7uFKUdTbmkEZFTwVmPwU0

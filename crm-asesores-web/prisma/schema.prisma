@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(uuid())
+  username      String         @unique
+  password      String
+  name          String?
+  image         String?
+  phone         String?
+  role          Role           @default(ASESOR)
+  fcmToken      String?
+  leads         Lead[]         @relation("AssignedLeads")
+  messages      Message[]      // Relación con mensajes enviados
+  notifications Notification[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+enum Role {
+  ASESOR
+  ADMIN
+}
+
+model Lead {
+  id           String    @id @default(uuid())
+  contactId    String?
+  firstName    String?
+  lastName     String?
+  phone        String?
+  email        String?   @unique
+  businessName String?
+  city         String?
+  source       String?
+  status       String    @default("NUEVO")
+  tags         String?
+  lastActivity String?
+  assignedToId String?
+  assignedTo   User?     @relation("AssignedLeads", fields: [assignedToId], references: [id])
+  notes        String?
+  visited      Boolean   @default(false)
+  visitDate    DateTime?
+  visitProject String?
+  lote         String?
+  etapa        String?
+  interests    String?
+  rating       String?   @default("FRIO")
+  lastNoteAt   DateTime?
+  
+  // Signing parameters
+  signingStatus  String?
+  signingDate    DateTime?
+  signingProject String?
+  signingLote    String?
+  signingEtapa   String?
+
+  // Reminder flags for visits
+  visitReminderSent1d Boolean @default(false)
+  visitReminderSent1h Boolean @default(false)
+
+  // UTM Parameters for web leads
+  utmSource    String?
+  utmMedium    String?
+  utmCampaign  String?
+  utmContent   String?
+  utmTerm      String?
+  adId         String?
+  adName       String?
+  formId       String?
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  conversations Conversation[]
+}
+
+model Conversation {
+  id        String    @id @default(uuid())
+  psid      String    @unique // Page-Scoped ID from Meta
+  platform  String    // "facebook" or "instagram"
+  metaName  String?   // Nombre real desde Meta
+  metaImage String?   // Foto de perfil desde Meta
+  leadId    String?
+  lead      Lead?     @relation(fields: [leadId], references: [id])
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  text           String
+  senderId       String?      // If sent by an advisor (User.id)
+  sender         User?        @relation(fields: [senderId], references: [id])
+  senderType     String       // "meta" or "advisor"
+  sourceType     String       @default("DIRECT") // "DIRECT" o "COMMENT"
+  sourceId       String?      // ID del mensaje o comentario en Meta
+  mediaUrl       String?      // URL de imagen o video adjunto
+  postId         String?      // ID de la publicación original
+  postContent    String?      // Resumen o URL de imagen de la publicación (contexto)
+  createdAt      DateTime     @default(now())
+}
+
+model IntegrationToken {
+  id            String   @id @default(cuid())
+  platform      String   @unique // "tiktok", "facebook", etc.
+  accessToken   String   @db.Text
+  refreshToken  String?  @db.Text
+  expiresAt     DateTime?
+  updatedAt     DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  body      String
+  type      String   @default("INFO")
+  leadId    String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}

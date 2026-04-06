@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #107B7A;
+  --background: #F5F7F9;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-slate-800 antialiased;
+    font-family: 'Public Sans', 'Inter', sans-serif;
+  }
+}
+
+@layer components {
+  .card-stitch {
+    @apply bg-white rounded-stitch shadow-stitch border border-slate-100 p-4 transition-all active:scale-[0.98];
+  }
+
+  .btn-stitch-primary {
+    @apply bg-primary text-white py-3 px-6 rounded-stitch font-bold shadow-lg shadow-primary/20 
+           hover:bg-primary-dark transition-all flex items-center justify-center gap-2;
+  }
+
+  .btn-stitch-outline {
+    @apply border-2 border-primary text-primary py-3 px-6 rounded-stitch font-bold 
+           hover:bg-primary/5 transition-all flex items-center justify-center gap-2;
+  }
+
+  .input-stitch {
+    @apply w-full bg-white border border-slate-200 rounded-stitch px-4 py-3 outline-none
+           focus:border-primary focus:ring-4 focus:ring-primary/5 transition-all text-slate-800;
+  }
+
+  /* Status Edge Bar for cards */
+  .status-edge-hot { @apply border-l-[6px] border-l-status-hot; }
+  .status-edge-warm { @apply border-l-[6px] border-l-status-warm; }
+  .status-edge-cold { @apply border-l-[6px] border-l-status-cold; }
+
+  /* Navigation Item */
+  .nav-item-active {
+    @apply text-primary font-bold;
+  }
+  .nav-item-inactive {
+    @apply text-slate-400 font-medium;
+  }
+}
+
+/* Mobile Container centering */
+.mobile-container {
+  @apply max-w-[480px] mx-auto min-h-screen bg-background relative flex flex-col shadow-2xl md:shadow-none;
+}
