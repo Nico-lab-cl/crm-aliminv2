@@ -32,6 +32,20 @@ export const sendNotification = async (token: string, title: string, body: strin
       title,
       body,
     },
+    android: {
+      notification: {
+        sound: 'default',
+        defaultVibrateTimings: false,
+        vibrateTimingsMillis: [0, 500, 200, 500], // Vibración distintiva
+      }
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: 'default'
+        }
+      }
+    },
     token: token,
   };
 
