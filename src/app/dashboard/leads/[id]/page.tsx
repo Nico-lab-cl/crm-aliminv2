@@ -509,6 +509,9 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
                 src={videoUrl} 
                 controls 
                 autoPlay 
+                playsInline
+                muted
+                preload="auto"
                 className="w-full h-full object-contain"
               >
                 Tu navegador no soporta el elemento de video.
