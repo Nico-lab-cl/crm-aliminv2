@@ -14,6 +14,7 @@ export const AD_VIDEO_MAPPING: Record<string, string> = {
   "MOFU| Lomas del mar 25-03-2026": "/videos/ads/lomas-del-mar-25-03.mp4",
   "MOFU | Lomas del mar| 02 | 25-03-2026": "/videos/ads/lomas-del-mar-02-25-03.mp4",
   "MOFU| Lomas del mar| 02 | 25-03-2026": "/videos/ads/lomas-del-mar-02-25-03.mp4",
+  "RO | MOFU Abril 9 | FM 35-65+ | Reel 3": "/videos/ads/Reel3_Abril9.mp4",
 };
 
 /**
