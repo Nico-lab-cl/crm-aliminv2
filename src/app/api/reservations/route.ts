@@ -133,6 +133,20 @@ export async function POST(req: Request) {
     if (!data.leadId) {
       return NextResponse.json({ error: "leadId es requerido" }, { status: 400 });
     }
+    if (!data.project || !data.lote) {
+      return NextResponse.json(
+        { error: "Proyecto y Lote son requeridos" },
+        { status: 400 }
+      );
+    }
+    // Etapa is required for libertad-alegria and lomas-del-mar
+    const projectsWithEtapa = ["libertad-alegria", "lomas-del-mar"];
+    if (projectsWithEtapa.includes(data.project) && !data.etapa) {
+      return NextResponse.json(
+        { error: "Etapa es requerida para este proyecto" },
+        { status: 400 }
+      );
+    }
     if (!data.fullName || !data.email || !data.phone || !data.rut) {
       return NextResponse.json(
         { error: "Nombre, email, teléfono y RUT son requeridos" },

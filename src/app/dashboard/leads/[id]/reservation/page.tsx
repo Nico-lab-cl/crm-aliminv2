@@ -79,10 +79,14 @@ export default function ReservationPage({
 
   // Project options (same as visit/signing pages)
   const PROJECT_OPTIONS = [
-    { id: "libertad-alegria", name: "Libertad y Alegría", emoji: "🌿" },
-    { id: "arena-sol", name: "Arena y Sol", emoji: "☀️" },
-    { id: "lomas-del-mar", name: "Lomas del Mar", emoji: "🌊" },
+    { id: "libertad-alegria", name: "Libertad y Alegría", emoji: "🌿", hasEtapa: true },
+    { id: "arena-sol", name: "Arena y Sol", emoji: "☀️", hasEtapa: false },
+    { id: "lomas-del-mar", name: "Lomas del Mar", emoji: "🌊", hasEtapa: true },
   ];
+
+  // Does the selected project require etapa?
+  const selectedProject = PROJECT_OPTIONS.find((p) => p.id === form.project);
+  const requiresEtapa = selectedProject?.hasEtapa ?? false;
 
   // File state
   const [proofFile, setProofFile] = useState<{
@@ -239,7 +243,13 @@ export default function ReservationPage({
 
   // Step validation
   const isStep1Valid =
-    form.project && form.fullName && form.email && form.phone && form.rut;
+    form.project &&
+    form.lote &&
+    (requiresEtapa ? form.etapa : true) &&
+    form.fullName &&
+    form.email &&
+    form.phone &&
+    form.rut;
   const isStep2Valid = true; // Address fields are optional
   const isStep3Valid = !!proofFile;
 
@@ -376,7 +386,7 @@ export default function ReservationPage({
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => setForm({ ...form, project: p.id })}
+                    onClick={() => setForm({ ...form, project: p.id, etapa: p.hasEtapa ? form.etapa : "" })}
                     className={clsx(
                       "flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all active:scale-95",
                       form.project === p.id
@@ -398,21 +408,23 @@ export default function ReservationPage({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className={requiresEtapa ? "grid grid-cols-2 gap-3" : ""}>
               <FormField
                 icon={Grid3X3}
-                label="Lote"
+                label="Lote *"
                 value={form.lote}
                 onChange={(v) => setForm({ ...form, lote: v })}
                 placeholder="Ej: 45"
               />
-              <FormField
-                icon={Layers}
-                label="Etapa"
-                value={form.etapa}
-                onChange={(v) => setForm({ ...form, etapa: v })}
-                placeholder="Ej: 3"
-              />
+              {requiresEtapa && (
+                <FormField
+                  icon={Layers}
+                  label="Etapa *"
+                  value={form.etapa}
+                  onChange={(v) => setForm({ ...form, etapa: v })}
+                  placeholder="Ej: 3"
+                />
+              )}
             </div>
 
             <div className="h-px bg-slate-100 my-2" />
