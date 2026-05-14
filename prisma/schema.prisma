@@ -19,6 +19,7 @@ model User {
   leads         Lead[]         @relation("AssignedLeads")
   messages      Message[]      // Relación con mensajes enviados
   notifications Notification[]
+  reservations  Reservation[]  @relation("CreatedReservations")
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 }
@@ -78,6 +79,7 @@ model Lead {
   updatedAt    DateTime  @updatedAt
   
   conversations Conversation[]
+  reservations  Reservation[]
 }
 
 model Conversation {
@@ -128,4 +130,36 @@ model Notification {
   leadId    String?
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+model Reservation {
+  id            String   @id @default(uuid())
+  leadId        String
+  lead          Lead     @relation(fields: [leadId], references: [id])
+
+  // Datos personales del cliente
+  fullName      String
+  email         String
+  phone         String
+  rut           String
+  profession    String?
+  civilStatus   String?
+  nationality   String?  @default("Chilena")
+
+  // Dirección
+  street        String?
+  streetNumber  String?
+  region        String?
+  commune       String?
+
+  // Comprobante de pago (base64)
+  proofFileName String?
+  proofMimeType String?
+  proofData     String?  @db.Text
+
+  // Metadatos
+  createdById   String?
+  createdBy     User?    @relation("CreatedReservations", fields: [createdById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

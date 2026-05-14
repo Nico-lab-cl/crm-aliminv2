@@ -4,7 +4,7 @@ import { signOut, useSession } from "next-auth/react";
 import {
   X, LogOut, Settings, User as UserIcon, Bell,
   Shield, HelpCircle, ChevronRight, Moon, Camera, Save, Phone,
-  TrendingUp, LayoutGrid
+  TrendingUp, LayoutGrid, FileCheck
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
@@ -238,9 +238,17 @@ export default function ProfileSlider({ isOpen, onClose }: ProfileSliderProps) {
                   <MenuButton 
                     icon={TrendingUp} 
                     label="Reservaciones LDM" 
-                    badge="NUEVO"
                     onClick={() => {
                         router.push("/dashboard/admin/reservations");
+                        onClose();
+                    }}
+                  />
+                  <MenuButton 
+                    icon={FileCheck} 
+                    label="Reservas CRM" 
+                    badge="NUEVO"
+                    onClick={() => {
+                        router.push("/dashboard/admin/crm-reservations");
                         onClose();
                     }}
                   />

@@ -307,6 +307,7 @@ function DashboardContent() {
     { id: "NUEVO", name: "Nuevo", color: "bg-blue-400" },
     { id: "CONTACTADO", name: "Contactado", color: "bg-orange-400" },
     { id: "VISITA", name: "Visita", color: "bg-green-400" },
+    { id: "RESERVADO", name: "Reservado", color: "bg-emerald-500" },
   ];
 
   const ratingFilters = [

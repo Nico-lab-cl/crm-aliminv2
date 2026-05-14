@@ -6,7 +6,7 @@ import {
   Mail, User as UserIcon, Smartphone, Map as MapIcon, 
   Edit3, Save, ChevronRight, Tent as Landscape,
   Meh, Smile, Laugh, Megaphone, ExternalLink, History,
-  ChevronDown, UserCheck, PenTool, X
+  ChevronDown, UserCheck, PenTool, X, FileCheck
 } from "lucide-react";
 import { getAdVideoUrl } from "@/lib/adVideos";
 import { getAdImages } from "@/lib/adImages";
@@ -62,6 +62,7 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
   const [assigningLead, setAssigningLead] = useState(false);
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [isImagesModalOpen, setIsImagesModalOpen] = useState(false);
+  const [reservationCount, setReservationCount] = useState(0);
 
   const isAdmin = (session?.user as any)?.role === "ADMIN";
   const videoUrl = getAdVideoUrl(lead?.adName);
@@ -75,6 +76,12 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
         setNote(data.notes || "");
       })
       .finally(() => setLoading(false));
+
+    // Fetch reservation count
+    fetch(`/api/reservations?leadId=${params.id}&limit=1`)
+      .then(res => res.json())
+      .then(data => setReservationCount(data.pagination?.total || 0))
+      .catch(() => {});
   }, [params.id]);
 
   // Fetch users for admin assignment
@@ -160,6 +167,7 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
       case "NUEVO": return "bg-primary text-white shadow-primary/20";
       case "CONTACTADO": return "bg-blue-500 text-white shadow-blue-100";
       case "VISITA": return "bg-emerald-500 text-white shadow-emerald-100";
+      case "RESERVADO": return "bg-green-600 text-white shadow-green-100";
       default: return "bg-slate-400 text-white shadow-slate-100";
     }
   };
@@ -466,8 +474,21 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* Bottom Actions for Visita & Firma */}
+      {/* Bottom Actions for Visita, Reserva & Firma */}
       <div className="px-4 pb-8 space-y-4">
+         <button 
+           onClick={() => router.push(`/dashboard/leads/${lead.id}/reservation`)}
+           className="w-full bg-green-600 text-white py-5 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-green-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3 relative"
+         >
+           <FileCheck size={20} />
+           Registrar Reserva
+           {reservationCount > 0 && (
+             <span className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/20 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
+               {reservationCount}
+             </span>
+           )}
+         </button>
+
          <button 
            onClick={() => router.push(`/dashboard/leads/${lead.id}/visit`)}
            className="w-full bg-primary text-white py-5 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-primary/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
