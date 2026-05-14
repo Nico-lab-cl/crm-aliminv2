@@ -146,6 +146,11 @@ model Reservation {
   civilStatus   String?
   nationality   String?  @default("Chilena")
 
+  // Proyecto inmobiliario
+  project       String?
+  lote          String?
+  etapa         String?
+
   // Dirección
   street        String?
   streetNumber  String?

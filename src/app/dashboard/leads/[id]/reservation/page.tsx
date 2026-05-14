@@ -24,6 +24,9 @@ import {
   X,
   Image as ImageIcon,
   Loader2,
+  Home,
+  Layers,
+  Grid3X3,
 } from "lucide-react";
 import clsx from "clsx";
 import {
@@ -58,6 +61,9 @@ export default function ReservationPage({
 
   // Form state
   const [form, setForm] = useState({
+    project: "",
+    lote: "",
+    etapa: "",
     fullName: "",
     email: "",
     phone: "",
@@ -70,6 +76,13 @@ export default function ReservationPage({
     region: "",
     commune: "",
   });
+
+  // Project options (same as visit/signing pages)
+  const PROJECT_OPTIONS = [
+    { id: "libertad-alegria", name: "Libertad y Alegría", emoji: "🌿" },
+    { id: "arena-sol", name: "Arena y Sol", emoji: "☀️" },
+    { id: "lomas-del-mar", name: "Lomas del Mar", emoji: "🌊" },
+  ];
 
   // File state
   const [proofFile, setProofFile] = useState<{
@@ -226,7 +239,7 @@ export default function ReservationPage({
 
   // Step validation
   const isStep1Valid =
-    form.fullName && form.email && form.phone && form.rut;
+    form.project && form.fullName && form.email && form.phone && form.rut;
   const isStep2Valid = true; // Address fields are optional
   const isStep3Valid = !!proofFile;
 
@@ -344,13 +357,65 @@ export default function ReservationPage({
               </div>
               <div>
                 <h3 className="text-lg font-black text-slate-800">
-                  Datos Personales
+                  Datos de la Reserva
                 </h3>
                 <p className="text-xs text-slate-400 font-medium">
-                  Información del cliente
+                  Proyecto e información del cliente
                 </p>
               </div>
             </div>
+
+            {/* Project Selection */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-1.5">
+                <Home size={10} />
+                Proyecto Inmobiliario *
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {PROJECT_OPTIONS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setForm({ ...form, project: p.id })}
+                    className={clsx(
+                      "flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all active:scale-95",
+                      form.project === p.id
+                        ? "border-primary bg-primary/5 shadow-lg shadow-primary/10"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    )}
+                  >
+                    <span className="text-2xl">{p.emoji}</span>
+                    <span
+                      className={clsx(
+                        "text-[9px] font-black uppercase tracking-wider text-center leading-tight",
+                        form.project === p.id ? "text-primary" : "text-slate-500"
+                      )}
+                    >
+                      {p.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                icon={Grid3X3}
+                label="Lote"
+                value={form.lote}
+                onChange={(v) => setForm({ ...form, lote: v })}
+                placeholder="Ej: 45"
+              />
+              <FormField
+                icon={Layers}
+                label="Etapa"
+                value={form.etapa}
+                onChange={(v) => setForm({ ...form, etapa: v })}
+                placeholder="Ej: 3"
+              />
+            </div>
+
+            <div className="h-px bg-slate-100 my-2" />
 
             <FormField
               icon={User}
@@ -595,6 +660,21 @@ export default function ReservationPage({
                 Resumen de la Reserva
               </p>
               <div className="space-y-2">
+                <SummaryRow
+                  label="Proyecto"
+                  value={
+                    PROJECT_OPTIONS.find((p) => p.id === form.project)?.name ||
+                    "—"
+                  }
+                  highlight
+                />
+                {form.lote && (
+                  <SummaryRow label="Lote" value={form.lote} />
+                )}
+                {form.etapa && (
+                  <SummaryRow label="Etapa" value={form.etapa} />
+                )}
+                <div className="h-px bg-slate-50 my-1" />
                 <SummaryRow label="Cliente" value={form.fullName} />
                 <SummaryRow label="RUT" value={form.rut} />
                 <SummaryRow label="Email" value={form.email} />

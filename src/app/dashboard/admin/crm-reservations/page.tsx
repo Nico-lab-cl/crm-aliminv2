@@ -22,6 +22,7 @@ import {
   Image as ImageIcon,
   X,
   ExternalLink,
+  Home,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -35,6 +36,9 @@ interface CRMReservation {
   profession: string | null;
   civilStatus: string | null;
   nationality: string | null;
+  project: string | null;
+  lote: string | null;
+  etapa: string | null;
   street: string | null;
   streetNumber: string | null;
   region: string | null;
@@ -221,6 +225,18 @@ export default function AdminCRMReservationsPage() {
                     <p className="text-[10px] font-bold text-slate-400 mt-0.5">
                       RUT: {res.rut}
                     </p>
+                    {res.project && (
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <Home size={11} className="text-primary" />
+                        <span className="text-[11px] font-black text-primary">
+                          {res.project === "lomas-del-mar" ? "Lomas del Mar" :
+                           res.project === "arena-sol" ? "Arena y Sol" :
+                           res.project === "libertad-alegria" ? "Libertad y Alegría" : res.project}
+                          {res.lote ? ` • Lote ${res.lote}` : ""}
+                          {res.etapa ? ` • Etapa ${res.etapa}` : ""}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Contact Info */}
