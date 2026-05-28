@@ -1,6 +1,7 @@
 import prisma from "./prisma";
 import { queryExternal } from "./externalDb";
 import externalPrisma from "./externalPrisma";
+import { getNextAdvisorId } from "./assignment";
 
 export async function syncExternalLeads() {
   console.log("Starting external leads sync...");
@@ -31,9 +32,22 @@ export async function syncExternalLeads() {
     for (const ext of externalLeads) {
       if (!ext.email) continue;
 
+      const emailLower = ext.email.toLowerCase();
+
       try {
+        // Check if lead exists to determine if we should auto-assign
+        const existingLead = await (prisma as any).lead.findUnique({
+          where: { email: emailLower },
+          select: { id: true, assignedToId: true }
+        });
+
+        let assignedToId = existingLead?.assignedToId || null;
+        if (!assignedToId) {
+          assignedToId = await getNextAdvisorId();
+        }
+
         await (prisma as any).lead.upsert({
-          where: { email: ext.email.toLowerCase() },
+          where: { email: emailLower },
           update: {
             firstName: ext.firstName,
             phone: ext.phone,
@@ -46,9 +60,10 @@ export async function syncExternalLeads() {
             utmContent: ext.utmContent,
             utmTerm: ext.utmTerm,
             createdAt: new Date(ext.createdAt),
+            assignedToId: assignedToId,
           },
           create: {
-            email: ext.email.toLowerCase(),
+            email: emailLower,
             firstName: ext.firstName,
             phone: ext.phone,
             source: ext.externalProject === 'Newsletter' ? 'Newsletter' : 'web aliminspa.cl',
@@ -60,7 +75,8 @@ export async function syncExternalLeads() {
             utmContent: ext.utmContent,
             utmTerm: ext.utmTerm,
             createdAt: new Date(ext.createdAt),
-            status: 'NUEVO'
+            status: 'NUEVO',
+            assignedToId: assignedToId,
           }
         });
         syncedCount++;
@@ -110,11 +126,16 @@ export async function syncReservationLeads() {
       const emailLower = res.email.toLowerCase();
 
       try {
-        // 2. Fetch existing lead to preserve source
+        // Fetch existing lead to preserve source and assignment if it exists
         const existingLead = await (prisma as any).lead.findUnique({
           where: { email: emailLower },
-          select: { source: true }
+          select: { source: true, assignedToId: true }
         });
+
+        let assignedToId = existingLead?.assignedToId || null;
+        if (!assignedToId) {
+          assignedToId = await getNextAdvisorId();
+        }
 
         await (prisma as any).lead.upsert({
           where: { email: emailLower },
@@ -131,6 +152,7 @@ export async function syncReservationLeads() {
             utmMedium: res.utmMedium,
             status: res.status || 'RESERVADO',
             updatedAt: new Date(),
+            assignedToId: assignedToId,
           },
           create: {
             email: emailLower,
@@ -145,6 +167,7 @@ export async function syncReservationLeads() {
             utmMedium: res.utmMedium,
             status: res.status || 'RESERVADO',
             createdAt: new Date(res.createdAt || Date.now()),
+            assignedToId: assignedToId,
           }
         });
         syncedCount++;

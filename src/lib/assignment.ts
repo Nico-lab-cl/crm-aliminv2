@@ -41,13 +41,11 @@ function getChileHour(): number {
 }
 
 /**
- * Checks if the current time is within the allowed assignment window (9:00 AM - 12:00 AM Chile).
+ * Checks if the current time is within the allowed assignment window.
+ * Always returns true now to allow 24/7 lead assignments.
  */
 export function isWithinAssignmentWindow(): boolean {
-  const currentHour = getChileHour();
-  // Window: 9 AM (inclusive) until midnight (exclusive 24)
-  // 9, 10, ..., 23 are valid. 0-8 are invalid.
-  return currentHour >= 9 && currentHour < 24;
+  return true;
 }
 
 export async function getNextAdvisorId(allowedIds?: string[]) {
