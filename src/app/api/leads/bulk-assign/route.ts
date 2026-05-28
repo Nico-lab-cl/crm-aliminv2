@@ -49,6 +49,7 @@ export async function POST(req: Request) {
         },
         data: {
           assignedToId: assignedToId,
+          updatedAt: new Date(),
         },
       });
       totalUpdated += result.count;

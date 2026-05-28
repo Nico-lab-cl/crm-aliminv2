@@ -86,10 +86,20 @@ export async function GET(req: Request) {
   }
 
   if (startDate || endDate) {
-    where.createdAt = {
-      gte: startDate ? new Date(startDate) : undefined,
-      lte: endDate ? new Date(endDate) : undefined,
-    };
+    where.OR = [
+      {
+        createdAt: {
+          gte: startDate ? new Date(startDate) : undefined,
+          lte: endDate ? new Date(endDate) : undefined,
+        }
+      },
+      {
+        updatedAt: {
+          gte: startDate ? new Date(startDate) : undefined,
+          lte: endDate ? new Date(endDate) : undefined,
+        }
+      }
+    ];
   }
 
   // Role-based filtering and specialized 'unassigned' view
@@ -113,7 +123,7 @@ export async function GET(req: Request) {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: "desc" },
+        orderBy: { updatedAt: "desc" },
         include: {
           assignedTo: {
             select: {

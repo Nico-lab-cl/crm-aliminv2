@@ -8,7 +8,7 @@ import {
   ChevronRight, Phone, MessageSquare, Clock,
   MoreVertical, Share2, Mail, ChevronLeft, ChevronDown,
   LayoutGrid, Globe, Megaphone, Calendar, MapPin,
-  Meh, Smile, Laugh, UserMinus, PenTool, TrendingUp
+  Meh, Smile, Laugh, UserMinus, PenTool, TrendingUp, X
 } from "lucide-react";
 import clsx from "clsx";
 import Image from "next/image";
@@ -63,6 +63,9 @@ function DashboardContent() {
   const [searchTerm, setSearchTerm] = useState(searchParams.get("q") || "");
   const [activeProject, setActiveProject] = useState(searchParams.get("project") || "TODOS");
   const [dateFilter, setDateFilter] = useState(searchParams.get("date") || "TODOS");
+  const [customStartDate, setCustomStartDate] = useState(searchParams.get("startDate") || "");
+  const [customEndDate, setCustomEndDate] = useState(searchParams.get("endDate") || "");
+  const [isCustomDateModalOpen, setIsCustomDateModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(Number(searchParams.get("page")) || 1);
   const [activeStatus, setActiveStatus] = useState(searchParams.get("status") || "TODOS");
   const [activeRating, setActiveRating] = useState(searchParams.get("rating") || "TODOS");
@@ -89,6 +92,59 @@ function DashboardContent() {
   const [loadingVisits, setLoadingVisits] = useState(false);
   const [loadingSignings, setLoadingSignings] = useState(false);
 
+  // Helper to get date range (handles custom dates)
+  const getDateRange = useCallback((filter: string) => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const yesterdayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+
+    let start: string | null = null;
+    let end: string | null = null;
+
+    if (filter === "HOY") {
+      start = todayStart.toISOString();
+      end = tomorrowStart.toISOString();
+    } else if (filter === "AYER") {
+      start = yesterdayStart.toISOString();
+      end = todayStart.toISOString();
+    } else if (filter === "ESTA SEMANA") {
+      const day = now.getDay();
+      const diff = now.getDate() - (day === 0 ? 6 : day - 1);
+      const monday = new Date(now.getFullYear(), now.getMonth(), diff);
+      start = monday.toISOString();
+      end = tomorrowStart.toISOString();
+    } else if (filter === "30 DIAS") {
+      const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+      start = thirtyDaysAgo.toISOString();
+      end = tomorrowStart.toISOString();
+    } else if (filter === "PERSONALIZADO") {
+      if (customStartDate) {
+        const [yr, mo, dy] = customStartDate.split('-').map(Number);
+        start = new Date(yr, mo - 1, dy, 0, 0, 0).toISOString();
+      }
+      if (customEndDate) {
+        const [yr, mo, dy] = customEndDate.split('-').map(Number);
+        end = new Date(yr, mo - 1, dy, 23, 59, 59, 999).toISOString();
+      }
+    }
+
+    return { start, end };
+  }, [customStartDate, customEndDate]);
+
+  // Helper to format date in short format DD/MM
+  const formatDateShort = useCallback((dateStr: string) => {
+    try {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}`;
+      }
+      return dateStr;
+    } catch {
+      return dateStr;
+    }
+  }, []);
+
   // Sync state → URL (so "Back" button restores position)
   const syncUrlParams = useCallback((page: number, q: string, project: string, date: string, statusF: string, ratingF: string, ownerIdF: string, visits: boolean, signings: boolean) => {
     const params = new URLSearchParams();
@@ -101,9 +157,15 @@ function DashboardContent() {
     if (ownerIdF !== "TODOS") params.set("ownerId", ownerIdF);
     if (visits) params.set("menu", "visits");
     if (signings) params.set("menu", "signings");
+    
+    if (date === "PERSONALIZADO") {
+      if (customStartDate) params.set("startDate", customStartDate);
+      if (customEndDate) params.set("endDate", customEndDate);
+    }
+
     const qs = params.toString();
     router.replace(`/dashboard${qs ? `?${qs}` : ""}`, { scroll: false });
-  }, [router]);
+  }, [router, customStartDate, customEndDate]);
 
   // Helper to fetch leads with all current filters
   const fetchLeads = useCallback(async (page: number, q: string, project: string, dateRange: string, statusFilter: string, ratingFilter: string, ownerIdFilter: string, visitsOnly: boolean) => {
@@ -145,7 +207,7 @@ function DashboardContent() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getDateRange]);
 
   // Fetch visits for calendar
   const fetchVisits = useCallback(async (month: string) => {
@@ -242,41 +304,7 @@ function DashboardContent() {
 
       return () => clearTimeout(delayDebounceFn);
     }
-  }, [status, router, currentPage, searchTerm, activeProject, dateFilter, activeStatus, activeRating, activeOwner, isVisitsActive, isSigningsActive, fetchLeads, syncUrlParams]);
-
-  const getDateRange = (filter: string) => {
-    const now = new Date();
-    // Start of current day (00:00:00 local)
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    // Start of tomorrow (00:00:00 local)
-    const tomorrowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    // Start of yesterday (00:00:00 local)
-    const yesterdayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-
-    let start: string | null = null;
-    let end: string | null = null;
-
-    if (filter === "HOY") {
-      start = todayStart.toISOString();
-      end = tomorrowStart.toISOString();
-    } else if (filter === "AYER") {
-      start = yesterdayStart.toISOString();
-      end = todayStart.toISOString();
-    } else if (filter === "ESTA SEMANA") {
-      // Adjusted for Monday start (standard in Chile)
-      const day = now.getDay();
-      const diff = now.getDate() - (day === 0 ? 6 : day - 1);
-      const monday = new Date(now.getFullYear(), now.getMonth(), diff);
-      start = monday.toISOString();
-      end = tomorrowStart.toISOString();
-    } else if (filter === "30 DIAS") {
-      const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
-      start = thirtyDaysAgo.toISOString();
-      end = tomorrowStart.toISOString();
-    }
-
-    return { start, end };
-  };
+  }, [status, router, currentPage, searchTerm, activeProject, dateFilter, activeStatus, activeRating, activeOwner, isVisitsActive, isSigningsActive, fetchLeads, syncUrlParams, customStartDate, customEndDate]);
 
   const getStatusColor = (status: string, rating?: string) => {
     const current = rating || status;
@@ -300,6 +328,7 @@ function DashboardContent() {
     { id: "AYER", name: "Ayer" },
     { id: "ESTA SEMANA", name: "Esta Semana" },
     { id: "30 DIAS", name: "Últimos 30 días" },
+    { id: "PERSONALIZADO", name: "Personalizado" },
   ];
 
   const statusFilters = [
@@ -852,7 +881,9 @@ function DashboardContent() {
             className="flex items-center gap-2 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-all active:scale-95 shadow-sm"
           >
             <Calendar size={12} className="text-primary" />
-            {dateFilter === "TODOS" ? "Periodos" : dateFilters.find(f => f.id === dateFilter)?.name}
+            {dateFilter === "PERSONALIZADO" 
+              ? `${customStartDate ? formatDateShort(customStartDate) : '...'} - ${customEndDate ? formatDateShort(customEndDate) : '...'}` 
+              : (dateFilter === "TODOS" ? "Periodos" : dateFilters.find(f => f.id === dateFilter)?.name)}
             <ChevronDown size={12} className={clsx("transition-transform", isPeriodDropdownOpen && "rotate-180")} />
           </button>
 
@@ -861,7 +892,15 @@ function DashboardContent() {
               {dateFilters.map((f) => (
                 <button
                   key={f.id}
-                  onClick={() => { setDateFilter(f.id); setIsPeriodDropdownOpen(false); setCurrentPage(1); }}
+                  onClick={() => { 
+                    if (f.id === "PERSONALIZADO") {
+                      setIsCustomDateModalOpen(true);
+                    } else {
+                      setDateFilter(f.id);
+                    }
+                    setIsPeriodDropdownOpen(false); 
+                    setCurrentPage(1); 
+                  }}
                   className={clsx(
                     "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-[11px] font-bold transition-all",
                     dateFilter === f.id ? "bg-primary/5 text-primary" : "text-slate-500 hover:bg-slate-50"
@@ -1143,6 +1182,70 @@ function DashboardContent() {
         )}
       </main>
         </>
+      )}
+
+      {/* Custom Date Selection Modal */}
+      {isCustomDateModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-[320px] rounded-3xl p-6 shadow-2xl border border-slate-100 flex flex-col gap-4 animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <h3 className="text-xs font-black text-primary uppercase tracking-widest">RANGO PERSONALIZADO</h3>
+              <button 
+                onClick={() => setIsCustomDateModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 active:scale-90 transition-all"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha de Inicio</label>
+                <input 
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-primary/20 transition-all w-full"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha de Fin</label>
+                <input 
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-primary/20 transition-all w-full"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-2">
+              <button 
+                onClick={() => {
+                  setCustomStartDate("");
+                  setCustomEndDate("");
+                  setDateFilter("TODOS");
+                  setIsCustomDateModalOpen(false);
+                  setCurrentPage(1);
+                }}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all text-center"
+              >
+                Limpiar
+              </button>
+              <button 
+                onClick={() => {
+                  setDateFilter("PERSONALIZADO");
+                  setIsCustomDateModalOpen(false);
+                  setCurrentPage(1);
+                }}
+                className="flex-1 bg-primary text-white py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20 active:scale-95 transition-all text-center"
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
