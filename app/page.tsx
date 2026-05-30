@@ -67,6 +67,7 @@ interface Segment {
 }
 
 interface PreviewPayload {
+  campaignId?: string;
   filters?: {
     ids?: string[];
     status?: string;
@@ -216,10 +217,12 @@ export default function Dashboard() {
           if (seg) {
             if (seg.type === 'static') {
               payload = {
+                campaignId: selectedCampaign || undefined,
                 filters: { ids: seg.filters.ids }
               };
             } else {
               payload = {
+                campaignId: selectedCampaign || undefined,
                 filters: { 
                   status: seg.filters.status || undefined, 
                   source: seg.filters.source || undefined,
@@ -238,6 +241,7 @@ export default function Dashboard() {
           }
         } else {
           payload = { 
+            campaignId: selectedCampaign || undefined,
             filters: { 
               status: selectedStatus || undefined, 
               source: selectedSource || undefined,
@@ -268,7 +272,7 @@ export default function Dashboard() {
       }
     };
     fetchPreview();
-  }, [selectedStatus, selectedSource, selectedProject, advancedFilters, dateRange, selectedSegmentId, segments]);
+  }, [selectedStatus, selectedSource, selectedProject, advancedFilters, dateRange, selectedSegmentId, segments, selectedCampaign]);
 
   const fetchData = async () => {
     try {

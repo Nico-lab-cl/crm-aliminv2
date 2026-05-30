@@ -284,6 +284,17 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
     whereClauses.push(`${createdAtCol} <= $${params.length}`);
   }
 
+  // Excluir leads que ya hayan recibido esta campaña con éxito o estén en proceso (SENT o PENDING)
+  if (campaignId) {
+    params.push(campaignId);
+    whereClauses.push(`NOT EXISTS (
+      SELECT 1 FROM campaign_logs 
+      WHERE campaign_logs.campaign_id = $${params.length} 
+        AND (campaign_logs.email = "Lead".${emailCol} OR campaign_logs.lead_id = "Lead".${idCol})
+        AND campaign_logs.status IN ('SENT', 'PENDING')
+    )`);
+  }
+
   const whereString = whereClauses.join(' AND ');
   const leadQuery = `
     SELECT DISTINCT ON (${emailCol}) ${idCol} as id, ${emailCol} as email${columns.includes(firstNameCol.replace(/"/g, '')) ? `, ${firstNameCol} as firstname` : ''}

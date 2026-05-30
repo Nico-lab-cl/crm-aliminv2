@@ -3,7 +3,7 @@ import { queryMain } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
-    const { filters, advancedFilters, dateRange } = await request.json();
+    const { campaignId, filters, advancedFilters, dateRange } = await request.json();
 
     const whereClauses = ['1=1'];
     const params: (string | number | Date | string[])[] = [];
@@ -35,6 +35,18 @@ export async function POST(request: Request) {
     const utmCampaignCol = findCol('utmcampaign') || '"utmCampaign"';
     const idCol = findCol('id') || '"id"';
     const createdAtCol = findCol('createdat') || findCol('created_at') || '"createdAt"';
+    const emailCol = findCol('email') || '"email"';
+
+    // Excluir leads que ya hayan recibido esta campaña con éxito o estén en proceso (SENT o PENDING)
+    if (campaignId) {
+      params.push(campaignId);
+      whereClauses.push(`NOT EXISTS (
+        SELECT 1 FROM campaign_logs 
+        WHERE campaign_logs.campaign_id = $${params.length} 
+          AND (campaign_logs.email = "Lead".${emailCol} OR campaign_logs.lead_id = "Lead".${idCol})
+          AND campaign_logs.status IN ('SENT', 'PENDING')
+      )`);
+    }
 
     // 2. Filtros Básicos o IDs (Listas Estáticas)
     if (filters?.ids && Array.isArray(filters.ids)) {
