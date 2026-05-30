@@ -297,6 +297,23 @@ export default function Dashboard() {
           }
       }
       if (lRes.ok) setLogs(await lRes.json());
+
+      // Check for active batch jobs
+      try {
+        const jobsRes = await fetch('/api/campaigns/execute/status');
+        if (jobsRes.ok) {
+          const jobs = await jobsRes.json();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const activeJob = jobs.find((j: any) => j.status === 'RUNNING' || j.status === 'QUEUED');
+          if (activeJob) {
+            setActiveJobId(activeJob.id);
+            setJobStatus(activeJob);
+            setLoading(true);
+          }
+        }
+      } catch (err) {
+        console.error('Error restoring active job status:', err);
+      }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     }
