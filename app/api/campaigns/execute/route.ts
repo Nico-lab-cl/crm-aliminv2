@@ -1,5 +1,20 @@
 import { NextResponse } from 'next/server';
-import { startBatchExecution } from '@/lib/batch_engine';
+import { startBatchExecution, getTodaySentCount } from '@/lib/batch_engine';
+
+export async function GET() {
+  // Return daily quota info
+  try {
+    const sentToday = await getTodaySentCount();
+    const dailyLimit = 2000;
+    return NextResponse.json({
+      sentToday,
+      dailyLimit,
+      remaining: Math.max(0, dailyLimit - sentToday),
+    });
+  } catch {
+    return NextResponse.json({ sentToday: 0, dailyLimit: 2000, remaining: 2000 });
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -10,7 +25,7 @@ export async function POST(request: Request) {
     }
 
     // Start batch job in background — returns immediately
-    const { jobId, totalLeads } = await startBatchExecution({ 
+    const result = await startBatchExecution({ 
       campaignId, 
       leadFilters: filters,
       advancedFilters,
@@ -20,9 +35,14 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ 
-      message: `Envío masivo iniciado: ${totalLeads} leads en lotes de ${batchSize || 50}`,
-      jobId,
-      totalLeads,
+      message: result.willSend < result.totalLeads 
+        ? `Enviando ${result.willSend} de ${result.totalLeads} leads (límite diario: ${result.dailyRemaining} restantes)`
+        : `Envío masivo iniciado: ${result.totalLeads} leads en lotes de ${batchSize || 50}`,
+      jobId: result.jobId,
+      totalLeads: result.totalLeads,
+      willSend: result.willSend,
+      dailyUsed: result.dailyUsed,
+      dailyRemaining: result.dailyRemaining,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Error al ejecutar campaña';

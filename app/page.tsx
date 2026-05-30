@@ -114,14 +114,17 @@ interface ExecutePayload {
 interface BatchJobStatus {
   id: string;
   campaignId: string;
-  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'DAILY_LIMIT';
   totalLeads: number;
   processedLeads: number;
   failedLeads: number;
+  skippedLeads: number;
   sentBatches: number;
   totalBatches: number;
   batchSize: number;
   delayMs: number;
+  dailyLimit: number;
+  dailyRemaining: number;
   currentBatchIndex: number;
   startedAt: string;
   completedAt: string | null;
@@ -167,9 +170,11 @@ export default function Dashboard() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<BatchJobStatus | null>(null);
   const [showBatchConfig, setShowBatchConfig] = useState(false);
+  const [dailyQuota, setDailyQuota] = useState({ sentToday: 0, dailyLimit: 2000, remaining: 2000 });
 
   useEffect(() => {
     fetchData();
+    fetchDailyQuota();
     const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -186,9 +191,10 @@ export default function Dashboard() {
           setJobStatus(data);
           
           // Stop polling when job is done
-          if (data.status === 'COMPLETED' || data.status === 'FAILED' || data.status === 'CANCELLED') {
+          if (data.status === 'COMPLETED' || data.status === 'FAILED' || data.status === 'CANCELLED' || data.status === 'DAILY_LIMIT') {
             setLoading(false);
             fetchLogs();
+            fetchDailyQuota();
           }
         }
       } catch (err) {
@@ -297,6 +303,15 @@ export default function Dashboard() {
     if (lRes.ok) setLogs(await lRes.json());
   };
 
+  const fetchDailyQuota = async () => {
+    try {
+      const res = await fetch('/api/campaigns/execute');
+      if (res.ok) setDailyQuota(await res.json());
+    } catch (err) {
+      console.error('Error fetching daily quota:', err);
+    }
+  };
+
   const handleExecute = async () => {
     if (!selectedCampaign) return alert('Selecciona una campaña');
     
@@ -359,10 +374,13 @@ export default function Dashboard() {
           totalLeads: data.totalLeads,
           processedLeads: 0,
           failedLeads: 0,
+          skippedLeads: (data.totalLeads || 0) - (data.willSend || data.totalLeads || 0),
           sentBatches: 0,
-          totalBatches: Math.ceil(data.totalLeads / batchSize),
+          totalBatches: Math.ceil((data.willSend || data.totalLeads) / batchSize),
           batchSize,
           delayMs: batchDelay * 1000,
+          dailyLimit: data.dailyLimit || 2000,
+          dailyRemaining: data.dailyRemaining || 2000,
           currentBatchIndex: 0,
           startedAt: new Date().toISOString(),
           completedAt: null,
@@ -873,12 +891,46 @@ export default function Dashboard() {
                       </div>
                     )}
 
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 font-medium flex gap-2">
-                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
-                      <div>
-                        <strong>Gmail Workspace:</strong> Límite de ~2,000 emails/día por cuenta. 
-                        Si tu lista excede este límite, los emails adicionales fallarán y quedarán marcados para reenvío.
+                    {/* Daily Quota Indicator */}
+                    <div className={`border rounded-lg p-4 space-y-3 ${
+                      dailyQuota.remaining === 0 ? 'bg-red-50 border-red-200' : 
+                      dailyQuota.remaining < 500 ? 'bg-amber-50 border-amber-200' :
+                      'bg-[#eaf0f6] border-[#cbd6e2]'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-[#2d544c]">📊 Cuota Gmail Diaria</span>
+                        <span className={`text-xs font-bold ${
+                          dailyQuota.remaining === 0 ? 'text-red-600' : 
+                          dailyQuota.remaining < 500 ? 'text-amber-600' : 'text-green-600'
+                        }`}>
+                          {dailyQuota.remaining} restantes
+                        </span>
                       </div>
+                      <div className="w-full bg-white rounded-full h-2.5 overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all ${
+                            dailyQuota.remaining === 0 ? 'bg-red-500' :
+                            dailyQuota.remaining < 500 ? 'bg-amber-500' : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min(100, (dailyQuota.sentToday / dailyQuota.dailyLimit) * 100)}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-[#516f90] font-medium">
+                        <span>{dailyQuota.sentToday} enviados hoy</span>
+                        <span>Límite: {dailyQuota.dailyLimit}/día</span>
+                      </div>
+                      {previewCount && previewCount > dailyQuota.remaining && (
+                        <div className="bg-amber-100 rounded-md p-2 text-[10px] text-amber-800 font-medium">
+                          ⚠️ Tu lista tiene {previewCount} leads pero solo quedan {dailyQuota.remaining} emails hoy. 
+                          Se enviarán {dailyQuota.remaining} hoy y los {previewCount - dailyQuota.remaining} restantes mañana.
+                          ({Math.ceil(previewCount / dailyQuota.dailyLimit)} días en total)
+                        </div>
+                      )}
+                      {dailyQuota.remaining === 0 && (
+                        <div className="bg-red-100 rounded-md p-2 text-[10px] text-red-700 font-bold">
+                          🚫 Cuota agotada. No puedes enviar más emails hoy. Espera hasta mañana.
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1094,6 +1146,7 @@ export default function Dashboard() {
             jobStatus.status === 'COMPLETED' ? 'bg-green-50 border-b border-green-200' :
             jobStatus.status === 'FAILED' ? 'bg-red-50 border-b border-red-200' :
             jobStatus.status === 'CANCELLED' ? 'bg-amber-50 border-b border-amber-200' :
+            jobStatus.status === 'DAILY_LIMIT' ? 'bg-blue-50 border-b border-blue-200' :
             'bg-[#eaf0f6] border-b border-[#cbd6e2]'
           }`}>
             <div className="flex items-center gap-2">
@@ -1102,11 +1155,13 @@ export default function Dashboard() {
               {jobStatus.status === 'COMPLETED' && <CheckCircle2 className="w-4 h-4 text-green-600" />}
               {jobStatus.status === 'FAILED' && <XCircle className="w-4 h-4 text-red-600" />}
               {jobStatus.status === 'CANCELLED' && <AlertTriangle className="w-4 h-4 text-amber-600" />}
+              {jobStatus.status === 'DAILY_LIMIT' && <AlertTriangle className="w-4 h-4 text-blue-600" />}
               <span className="text-sm font-bold text-[#33475b]">
                 {jobStatus.status === 'RUNNING' ? 'Envío en Progreso' :
                  jobStatus.status === 'QUEUED' ? 'Preparando Envío...' :
                  jobStatus.status === 'COMPLETED' ? 'Envío Completado' :
                  jobStatus.status === 'FAILED' ? 'Envío Fallido' :
+                 jobStatus.status === 'DAILY_LIMIT' ? 'Límite Diario Alcanzado' :
                  'Envío Cancelado'}
               </span>
             </div>
@@ -1119,7 +1174,7 @@ export default function Dashboard() {
                   Cancelar
                 </button>
               )}
-              {(jobStatus.status === 'COMPLETED' || jobStatus.status === 'FAILED' || jobStatus.status === 'CANCELLED') && (
+              {(jobStatus.status === 'COMPLETED' || jobStatus.status === 'FAILED' || jobStatus.status === 'CANCELLED' || jobStatus.status === 'DAILY_LIMIT') && (
                 <button
                   onClick={handleCloseJobTracker}
                   className="text-[#516f90] hover:text-[#33475b] p-1 rounded hover:bg-white transition-all"
@@ -1144,6 +1199,7 @@ export default function Dashboard() {
                   jobStatus.status === 'COMPLETED' ? 'bg-green-500' :
                   jobStatus.status === 'FAILED' ? 'bg-red-500' :
                   jobStatus.status === 'CANCELLED' ? 'bg-amber-500' :
+                  jobStatus.status === 'DAILY_LIMIT' ? 'bg-blue-500' :
                   'bg-[#2d544c]'
                 }`}
                 style={{ width: `${jobStatus.progress}%` }}
@@ -1192,6 +1248,17 @@ export default function Dashboard() {
               Batch {jobStatus.currentBatchIndex}/{jobStatus.totalBatches} • 
               {jobStatus.batchSize} leads/lote • 
               {jobStatus.delayMs / 1000}s pausa
+            </div>
+          )}
+
+          {/* Daily Limit Info */}
+          {jobStatus.status === 'DAILY_LIMIT' && jobStatus.skippedLeads > 0 && (
+            <div className="px-5 pb-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800 font-medium">
+                <p className="font-bold mb-1">📋 {jobStatus.skippedLeads} leads pendientes para mañana</p>
+                <p>Se enviaron {jobStatus.processedLeads - jobStatus.failedLeads} de {jobStatus.totalLeads} leads hoy. 
+                El resto se puede enviar mañana cuando se renueve la cuota de Gmail.</p>
+              </div>
             </div>
           )}
         </div>

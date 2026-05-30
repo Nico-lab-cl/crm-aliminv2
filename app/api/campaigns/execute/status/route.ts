@@ -15,15 +15,19 @@ export async function GET(request: Request) {
       totalLeads: j.totalLeads,
       processedLeads: j.processedLeads,
       failedLeads: j.failedLeads,
+      skippedLeads: j.skippedLeads,
       sentBatches: j.sentBatches,
       totalBatches: j.totalBatches,
       batchSize: j.batchSize,
       delayMs: j.delayMs,
+      dailyLimit: j.dailyLimit,
+      dailyUsedBefore: j.dailyUsedBefore,
+      dailyRemaining: j.dailyRemaining,
       currentBatchIndex: j.currentBatchIndex,
       startedAt: j.startedAt,
       completedAt: j.completedAt,
-      progress: j.totalLeads > 0 ? Math.round((j.processedLeads / j.totalLeads) * 100) : 0,
-      errors: j.errors.slice(-5), // Last 5 errors only
+      progress: j.totalLeads > 0 ? Math.round((j.processedLeads / Math.min(j.totalLeads, j.dailyRemaining)) * 100) : 0,
+      errors: j.errors.slice(-5),
     })));
   }
 
@@ -32,6 +36,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: 'Job no encontrado' }, { status: 404 });
   }
 
+  // Progress is based on leads that WILL be sent (not skipped ones)
+  const leadsToProcess = Math.min(job.totalLeads, job.dailyRemaining);
+  const progress = leadsToProcess > 0 ? Math.round((job.processedLeads / leadsToProcess) * 100) : 0;
+
   return NextResponse.json({
     id: job.id,
     campaignId: job.campaignId,
@@ -39,14 +47,18 @@ export async function GET(request: Request) {
     totalLeads: job.totalLeads,
     processedLeads: job.processedLeads,
     failedLeads: job.failedLeads,
+    skippedLeads: job.skippedLeads,
     sentBatches: job.sentBatches,
     totalBatches: job.totalBatches,
     batchSize: job.batchSize,
     delayMs: job.delayMs,
+    dailyLimit: job.dailyLimit,
+    dailyUsedBefore: job.dailyUsedBefore,
+    dailyRemaining: job.dailyRemaining,
     currentBatchIndex: job.currentBatchIndex,
     startedAt: job.startedAt,
     completedAt: job.completedAt,
-    progress: job.totalLeads > 0 ? Math.round((job.processedLeads / job.totalLeads) * 100) : 0,
+    progress: Math.min(progress, 100),
     errors: job.errors.slice(-10),
   });
 }

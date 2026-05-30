@@ -1,19 +1,28 @@
 import { queryMain, queryMarketing } from '@/lib/db';
 
 // ============================================================
+// Constants
+// ============================================================
+const GMAIL_DAILY_LIMIT = 2000;
+
+// ============================================================
 // In-Memory Job Tracker
 // ============================================================
 export interface BatchJob {
   id: string;
   campaignId: string;
-  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'DAILY_LIMIT';
   totalLeads: number;
   processedLeads: number;
   sentBatches: number;
   totalBatches: number;
   failedLeads: number;
+  skippedLeads: number;  // leads not sent due to daily limit
   batchSize: number;
   delayMs: number;
+  dailyLimit: number;
+  dailyUsedBefore: number;  // how many were already sent today before this job
+  dailyRemaining: number;   // quota remaining when job started
   startedAt: Date;
   completedAt: Date | null;
   errors: string[];
@@ -35,11 +44,29 @@ export function getAllJobs(): BatchJob[] {
 
 export function cancelJob(jobId: string): boolean {
   const job = activeJobs.get(jobId);
-  if (job && job.status === 'RUNNING') {
+  if (job && (job.status === 'RUNNING' || job.status === 'QUEUED')) {
     job.status = 'CANCELLED';
     return true;
   }
   return false;
+}
+
+/**
+ * Check how many emails were sent today (UTC) via campaign_logs
+ */
+export async function getTodaySentCount(): Promise<number> {
+  try {
+    const res = await queryMarketing(`
+      SELECT COUNT(*) as count 
+      FROM campaign_logs 
+      WHERE status IN ('SENT', 'PENDING') 
+        AND sent_at >= CURRENT_DATE
+    `);
+    return parseInt(res.rows[0]?.count || '0', 10);
+  } catch {
+    // If table doesn't exist or query fails, assume 0
+    return 0;
+  }
 }
 
 // ============================================================
@@ -53,6 +80,7 @@ interface BatchExecuteOptions {
   dateRange?: { start?: string; end?: string };
   batchSize?: number;    // default 50
   delayMs?: number;      // delay between batches in ms, default 5000
+  dailyLimit?: number;   // default 2000 (Gmail Workspace)
 }
 
 function generateJobId(): string {
@@ -62,23 +90,39 @@ function generateJobId(): string {
 /**
  * Starts a batch campaign execution in the background.
  * Returns a jobId immediately so the UI can poll for progress.
+ * Respects daily sending limits.
  */
-export async function startBatchExecution(options: BatchExecuteOptions): Promise<{ jobId: string; totalLeads: number }> {
+export async function startBatchExecution(options: BatchExecuteOptions): Promise<{ 
+  jobId: string; 
+  totalLeads: number;
+  dailyUsed: number;
+  dailyRemaining: number;
+  willSend: number;
+}> {
   const { 
     campaignId, 
     leadFilters, 
     advancedFilters, 
     dateRange, 
     batchSize = 50, 
-    delayMs = 5000 
+    delayMs = 5000,
+    dailyLimit = GMAIL_DAILY_LIMIT,
   } = options;
 
-  // 1. Get the campaign
+  // 1. Check daily quota
+  const dailyUsed = await getTodaySentCount();
+  const dailyRemaining = Math.max(0, dailyLimit - dailyUsed);
+
+  if (dailyRemaining === 0) {
+    throw new Error(`Límite diario de ${dailyLimit} emails alcanzado. Ya se enviaron ${dailyUsed} emails hoy. Intenta mañana.`);
+  }
+
+  // 2. Get the campaign
   const campaignRes = await queryMarketing('SELECT * FROM campaigns WHERE id = $1', [campaignId]);
   if (campaignRes.rowCount === 0) throw new Error('Campaña no encontrada');
   const campaign = campaignRes.rows[0];
 
-  // 2. Discover schema columns dynamically
+  // 3. Discover schema columns dynamically
   let columns: string[] = [];
   try {
     const schemaRes = await queryMain(`
@@ -96,7 +140,7 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
     return match ? `"${match}"` : null;
   };
 
-  // 3. Build dynamic WHERE clause (reuse same logic from sending_engine)
+  // 4. Build dynamic WHERE clause
   const statusCol = findCol('status') || '"Status"';
   const sourceCol = findCol('source') || '"Source"';
   const projectCol = findCol('project') || '"Project"';
@@ -249,27 +293,35 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
   `;
 
   const leadsRes = await queryMain(leadQuery, params);
-  const leads = leadsRes.rows;
+  const allLeads = leadsRes.rows;
 
-  if (leads.length === 0) {
+  if (allLeads.length === 0) {
     throw new Error('No se encontraron leads con los filtros seleccionados');
   }
 
-  // 4. Create the job
+  // 5. Cap leads to daily remaining quota
+  const leadsToSend = allLeads.slice(0, dailyRemaining);
+  const skippedCount = allLeads.length - leadsToSend.length;
+
+  // 6. Create the job
   const jobId = generateJobId();
-  const totalBatches = Math.ceil(leads.length / batchSize);
+  const totalBatches = Math.ceil(leadsToSend.length / batchSize);
 
   const job: BatchJob = {
     id: jobId,
     campaignId,
     status: 'QUEUED',
-    totalLeads: leads.length,
+    totalLeads: allLeads.length,
     processedLeads: 0,
     sentBatches: 0,
     totalBatches,
     failedLeads: 0,
+    skippedLeads: skippedCount,
     batchSize,
     delayMs,
+    dailyLimit,
+    dailyUsedBefore: dailyUsed,
+    dailyRemaining,
     startedAt: new Date(),
     completedAt: null,
     errors: [],
@@ -278,15 +330,21 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
 
   activeJobs.set(jobId, job);
 
-  // 5. Start background processing (fire-and-forget)
-  processBatches(job, leads, campaign).catch(err => {
+  // 7. Start background processing (fire-and-forget)
+  processBatches(job, leadsToSend, campaign).catch(err => {
     console.error(`[BatchEngine] Fatal error in job ${jobId}:`, err);
     job.status = 'FAILED';
     job.errors.push(`Fatal: ${err.message}`);
     job.completedAt = new Date();
   });
 
-  return { jobId, totalLeads: leads.length };
+  return { 
+    jobId, 
+    totalLeads: allLeads.length, 
+    dailyUsed, 
+    dailyRemaining,
+    willSend: leadsToSend.length,
+  };
 }
 
 // ============================================================
@@ -317,7 +375,7 @@ async function processBatches(
     batches.push(leads.slice(i, i + job.batchSize));
   }
 
-  console.log(`[BatchEngine] Job ${job.id}: Starting ${batches.length} batches of ${job.batchSize} leads (total: ${leads.length})`);
+  console.log(`[BatchEngine] Job ${job.id}: Starting ${batches.length} batches of ${job.batchSize} leads (sending: ${leads.length}, skipped: ${job.skippedLeads})`);
 
   for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
     // Check for cancellation
@@ -332,8 +390,7 @@ async function processBatches(
 
     console.log(`[BatchEngine] Job ${job.id}: Processing batch ${batchIdx + 1}/${batches.length} (${batch.length} leads)`);
 
-    // Process each lead in the batch: create logs and send to n8n ONE BY ONE
-    // This way n8n receives individual webhook calls but with controlled pacing
+    // Process each lead in the batch sequentially
     for (const lead of batch) {
       if (job.status === 'CANCELLED') break;
 
@@ -341,6 +398,7 @@ async function processBatches(
         const emailValue = lead.email || lead.Email;
         if (!emailValue) {
           job.failedLeads++;
+          job.processedLeads++;
           continue;
         }
 
@@ -404,9 +462,14 @@ async function processBatches(
     }
   }
 
+  // Final status
   if (job.status === 'RUNNING') {
-    job.status = 'COMPLETED';
+    if (job.skippedLeads > 0) {
+      job.status = 'DAILY_LIMIT';
+    } else {
+      job.status = 'COMPLETED';
+    }
   }
   job.completedAt = new Date();
-  console.log(`[BatchEngine] Job ${job.id}: Finished. Processed: ${job.processedLeads}, Failed: ${job.failedLeads}`);
+  console.log(`[BatchEngine] Job ${job.id}: Finished. Sent: ${job.processedLeads - job.failedLeads}, Failed: ${job.failedLeads}, Skipped (daily limit): ${job.skippedLeads}`);
 }
