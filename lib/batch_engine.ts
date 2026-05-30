@@ -474,6 +474,11 @@ async function processBatches(
         job.errors.push(`Lead ${lead.email}: ${msg}`);
         console.error(`[BatchEngine] Error processing lead:`, error);
       }
+
+      // Esperar 1.5 segundos entre cada envío individual para evitar límites de concurrencia en Gmail
+      if ((job.status as string) === 'RUNNING') {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
     }
 
     job.sentBatches = batchIdx + 1;

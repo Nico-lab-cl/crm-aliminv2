@@ -883,7 +883,7 @@ export default function Dashboard() {
                           </div>
                           <div>
                             <p className="text-2xl font-bold text-[#33475b]">
-                              {Math.ceil((Math.ceil(previewCount / batchSize) - 1) * batchDelay / 60)}m
+                              {Math.ceil((previewCount * 1.5 + (Math.ceil(previewCount / batchSize) - 1) * batchDelay) / 60)}m
                             </p>
                             <p className="text-[10px] text-[#516f90] font-medium">TIEMPO ESTIMADO</p>
                           </div>
