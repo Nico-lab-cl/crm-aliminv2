@@ -284,17 +284,6 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
     whereClauses.push(`${createdAtCol} <= $${params.length}`);
   }
 
-  // Excluir leads que ya hayan recibido esta campaña con éxito o estén en proceso (SENT o PENDING)
-  if (campaignId) {
-    params.push(campaignId);
-    whereClauses.push(`NOT EXISTS (
-      SELECT 1 FROM campaign_logs 
-      WHERE campaign_logs.campaign_id = $${params.length} 
-        AND (campaign_logs.email = "Lead".${emailCol} OR campaign_logs.lead_id = "Lead".${idCol})
-        AND campaign_logs.status IN ('SENT', 'PENDING')
-    )`);
-  }
-
   const whereString = whereClauses.join(' AND ');
   const leadQuery = `
     SELECT DISTINCT ON (${emailCol}) ${idCol} as id, ${emailCol} as email${columns.includes(firstNameCol.replace(/"/g, '')) ? `, ${firstNameCol} as firstname` : ''}
@@ -310,9 +299,32 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
     throw new Error('No se encontraron leads con los filtros seleccionados');
   }
 
+  // Obtener correos enviados/pendientes para esta campaña desde la DB de Marketing
+  let sentEmails = new Set<string>();
+  if (campaignId) {
+    try {
+      const logsRes = await queryMarketing(
+        `SELECT email FROM campaign_logs WHERE campaign_id = $1 AND status IN ('SENT', 'PENDING')`,
+        [campaignId]
+      );
+      sentEmails = new Set(logsRes.rows.map((r: { email: string }) => r.email.toLowerCase()));
+    } catch (err) {
+      console.warn('Error fetching campaign logs for exclusion in batch execution:', err);
+    }
+  }
+
+  // Filtrar leads que no han recibido la campaña aún
+  const unsentLeads = campaignId
+    ? allLeads.filter((l: { email?: string }) => !sentEmails.has((l.email || '').toLowerCase()))
+    : allLeads;
+
+  if (unsentLeads.length === 0) {
+    throw new Error('Todos los leads calificados para este segmento ya han recibido esta campaña.');
+  }
+
   // 5. Cap leads to daily remaining quota
-  const leadsToSend = allLeads.slice(0, dailyRemaining);
-  const skippedCount = allLeads.length - leadsToSend.length;
+  const leadsToSend = unsentLeads.slice(0, dailyRemaining);
+  const skippedCount = unsentLeads.length - leadsToSend.length;
 
   // 6. Create the job
   const jobId = generateJobId();
@@ -322,7 +334,7 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
     id: jobId,
     campaignId,
     status: 'QUEUED',
-    totalLeads: allLeads.length,
+    totalLeads: unsentLeads.length,
     processedLeads: 0,
     sentBatches: 0,
     totalBatches,

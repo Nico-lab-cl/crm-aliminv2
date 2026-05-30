@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { queryMain } from '@/lib/db';
+import { queryMain, queryMarketing } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
@@ -37,16 +37,7 @@ export async function POST(request: Request) {
     const createdAtCol = findCol('createdat') || findCol('created_at') || '"createdAt"';
     const emailCol = findCol('email') || '"email"';
 
-    // Excluir leads que ya hayan recibido esta campaña con éxito o estén en proceso (SENT o PENDING)
-    if (campaignId) {
-      params.push(campaignId);
-      whereClauses.push(`NOT EXISTS (
-        SELECT 1 FROM campaign_logs 
-        WHERE campaign_logs.campaign_id = $${params.length} 
-          AND (campaign_logs.email = "Lead".${emailCol} OR campaign_logs.lead_id = "Lead".${idCol})
-          AND campaign_logs.status IN ('SENT', 'PENDING')
-      )`);
-    }
+    const firstNameCol = findCol('firstname') || findCol('first_name') || '"FirstName"';
 
     // 2. Filtros Básicos o IDs (Listas Estáticas)
     if (filters?.ids && Array.isArray(filters.ids)) {
@@ -173,34 +164,61 @@ export async function POST(request: Request) {
 
     const whereString = whereClauses.join(' AND ');
 
-    // 4. Conteo Total (CRM)
+    // 4. Obtener correos enviados/pendientes para esta campaña desde la DB de Marketing
+    let sentEmails = new Set<string>();
+    if (campaignId) {
+      try {
+        const logsRes = await queryMarketing(
+          `SELECT email FROM campaign_logs WHERE campaign_id = $1 AND status IN ('SENT', 'PENDING')`,
+          [campaignId]
+        );
+        sentEmails = new Set(logsRes.rows.map((r: { email: string }) => r.email.toLowerCase()));
+      } catch (err) {
+        console.warn('Error fetching campaign logs for exclusion in preview:', err);
+      }
+    }
+
+    // 5. Conteo Total (CRM)
     const totalCountRes = await queryMain(`SELECT COUNT(*) as total FROM "Lead" WHERE ${whereString}`, params);
     const totalCount = parseInt(totalCountRes.rows[0].total, 10);
 
-    // 5. Conteo Enviables (Únicos) - Usando comillas en Email por si acaso
-    const mailableCountRes = await queryMain(`
-      SELECT COUNT(DISTINCT email) as mailable 
+    // 6. Conteo Enviables (Únicos y Excluidos)
+    // Para resolverlo de forma correcta sin cross-database joins, traemos la lista y filtramos en memoria
+    const leadsRes = await queryMain(`
+      SELECT DISTINCT ON (${emailCol}) 
+        ${idCol} as id, 
+        ${emailCol} as email, 
+        ${columns.includes(firstNameCol.replace(/"/g, '')) ? `${firstNameCol} as firstname, ` : ''} 
+        ${columns.includes(createdAtCol.replace(/"/g, '')) ? `${createdAtCol} as createdat` : '1 as createdat'}
       FROM "Lead" 
       WHERE ${whereString} 
-      AND email IS NOT NULL AND email != ''
+        AND ${emailCol} IS NOT NULL AND ${emailCol} != ''
+      ORDER BY ${emailCol}, ${columns.includes(createdAtCol.replace(/"/g, '')) ? createdAtCol : '1'} DESC
     `, params);
-    const mailableCount = parseInt(mailableCountRes.rows[0].mailable, 10);
 
-    // 6. Previsualización (Muestra Dinámica)
-    const previewQuery = `
-      SELECT * 
-      FROM "Lead" 
-      WHERE ${whereString} 
-      ORDER BY "createdAt" DESC NULLS LAST
-      LIMIT 100
-    `;
-    const leadsRes = await queryMain(previewQuery, params);
+    const allLeads = leadsRes.rows;
+
+    // Filtrar leads que no han recibido la campaña aún
+    const filteredLeads = campaignId 
+      ? allLeads.filter((l: { email?: string; Email?: string }) => !sentEmails.has((l.email || l.Email || '').toLowerCase()))
+      : allLeads;
+
+    const mailableCount = filteredLeads.length;
+
+    // 7. Previsualización (Muestra los primeros 100 ordenados por fecha de creación)
+    const sortedLeads = [...filteredLeads].sort((a: { createdat?: string | Date }, b: { createdat?: string | Date }) => {
+      const dateA = a.createdat ? new Date(a.createdat).getTime() : 0;
+      const dateB = b.createdat ? new Date(b.createdat).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    const previewLeads = sortedLeads.slice(0, 100);
 
     return NextResponse.json({ 
       count: mailableCount,
       mailableCount,
       totalCount,
-      preview: leadsRes.rows 
+      preview: previewLeads 
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Error al previsualizar leads';
