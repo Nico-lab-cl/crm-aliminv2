@@ -78,6 +78,40 @@ export async function GET() {
       results.push("Column 'created_at' already exists in campaign_logs.");
     }
 
+    // 4b. Check for 'opened_at' in campaign_logs
+    const checkLogsOpenedAt = await queryMarketing(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'campaign_logs' AND column_name = 'opened_at'
+    `);
+
+    if (checkLogsOpenedAt.rows.length === 0) {
+      await queryMarketing(`
+        ALTER TABLE campaign_logs 
+        ADD COLUMN opened_at TIMESTAMP WITH TIME ZONE
+      `);
+      results.push("Added 'opened_at' column to campaign_logs table.");
+    } else {
+      results.push("Column 'opened_at' already exists in campaign_logs.");
+    }
+
+    // 4c. Check for 'last_callback_at' in campaign_logs
+    const checkLogsLastCallbackAt = await queryMarketing(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'campaign_logs' AND column_name = 'last_callback_at'
+    `);
+
+    if (checkLogsLastCallbackAt.rows.length === 0) {
+      await queryMarketing(`
+        ALTER TABLE campaign_logs 
+        ADD COLUMN last_callback_at TIMESTAMP WITH TIME ZONE
+      `);
+      results.push("Added 'last_callback_at' column to campaign_logs table.");
+    } else {
+      results.push("Column 'last_callback_at' already exists in campaign_logs.");
+    }
+
     // 5. Check if 'segments' table exists
     const checkSegmentsTable = await queryMarketing(`
       SELECT table_name 
