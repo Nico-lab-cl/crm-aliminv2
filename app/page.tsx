@@ -71,6 +71,8 @@ interface PreviewPayload {
     utmMedium?: string;
     utmCampaign?: string;
     activity?: string;
+    startDate?: string;
+    endDate?: string;
   };
   advancedFilters?: Array<{ column: string; operator: string; value: string }>;
   dateRange?: {
@@ -91,6 +93,8 @@ interface ExecutePayload {
     utmMedium?: string;
     utmCampaign?: string;
     activity?: string;
+    startDate?: string;
+    endDate?: string;
   };
   advancedFilters?: Array<{ column: string; operator: string; value: string }>;
   dateRange?: {
@@ -160,7 +164,9 @@ export default function Dashboard() {
                   utmSource: seg.filters.utmSource || undefined,
                   utmMedium: seg.filters.utmMedium || undefined,
                   utmCampaign: seg.filters.utmCampaign || undefined,
-                  activity: seg.filters.activity || undefined
+                  activity: seg.filters.activity || undefined,
+                  startDate: seg.filters.startDate || undefined,
+                  endDate: seg.filters.endDate || undefined
                 },
                 advancedFilters: seg.filters.advancedFilters || []
               };
@@ -252,7 +258,9 @@ export default function Dashboard() {
             utmSource: seg.filters.utmSource || undefined,
             utmMedium: seg.filters.utmMedium || undefined,
             utmCampaign: seg.filters.utmCampaign || undefined,
-            activity: seg.filters.activity || undefined
+            activity: seg.filters.activity || undefined,
+            startDate: seg.filters.startDate || undefined,
+            endDate: seg.filters.endDate || undefined
           };
           payload.advancedFilters = seg.filters.advancedFilters || [];
         }

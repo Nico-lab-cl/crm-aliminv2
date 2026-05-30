@@ -67,6 +67,8 @@ export default function ListsPage() {
   const [projectFilter, setProjectFilter] = useState('');
   const [activityFilter, setActivityFilter] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
   
   // UTM Filters
   const [utmSourceFilter, setUtmSourceFilter] = useState('');
@@ -136,6 +138,8 @@ export default function ListsPage() {
         utmSource: utmSourceFilter,
         utmMedium: utmMediumFilter,
         utmCampaign: utmCampaignFilter,
+        startDate: startDateFilter,
+        endDate: endDateFilter,
         limit: '100' // preview limit
       });
 
@@ -158,7 +162,9 @@ export default function ListsPage() {
     searchFilter, 
     utmSourceFilter, 
     utmMediumFilter, 
-    utmCampaignFilter
+    utmCampaignFilter,
+    startDateFilter,
+    endDateFilter
   ]);
 
   useEffect(() => {
@@ -174,6 +180,8 @@ export default function ListsPage() {
     setSelectedSegment(segment);
     setListName(segment.name);
     setListType(segment.type);
+    setStartDateFilter(segment.filters.startDate || '');
+    setEndDateFilter(segment.filters.endDate || '');
 
     if (segment.type === 'static') {
       // Cargar leads específicos de la lista estática
@@ -222,12 +230,14 @@ export default function ListsPage() {
     setUtmSourceFilter('');
     setUtmMediumFilter('');
     setUtmCampaignFilter('');
+    setStartDateFilter('');
+    setEndDateFilter('');
     fetchPreview();
   };
 
-  // Guardar lista (dinámica o estática)
-  const handleSaveList = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Guardar lista (dinámica o estática, creación o edición)
+  const handleSaveList = async (e: React.FormEvent, forceNew = false) => {
+    if (e) e.preventDefault();
     if (!listName.trim()) return alert('Ingresa un nombre para la lista.');
 
     let filtersObj: Segment['filters'] = {};
@@ -238,7 +248,11 @@ export default function ListsPage() {
         return alert('No hay contactos en la previsualización para crear una lista estática.');
       }
       const ids = previewLeads.map(l => l.id);
-      filtersObj = { ids };
+      filtersObj = {
+        ids,
+        startDate: startDateFilter || undefined,
+        endDate: endDateFilter || undefined
+      };
     } else {
       // Dinámica: Guardar criterios de filtrado
       filtersObj = {
@@ -249,13 +263,19 @@ export default function ListsPage() {
         search: searchFilter || undefined,
         utmSource: utmSourceFilter || undefined,
         utmMedium: utmMediumFilter || undefined,
-        utmCampaign: utmCampaignFilter || undefined
+        utmCampaign: utmCampaignFilter || undefined,
+        startDate: startDateFilter || undefined,
+        endDate: endDateFilter || undefined
       };
     }
 
     try {
-      const res = await fetch('/api/segments', {
-        method: 'POST',
+      const isEditing = !!selectedSegment && !forceNew;
+      const url = isEditing ? `/api/segments/${selectedSegment.id}` : '/api/segments';
+      const method = isEditing ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: listName,
@@ -265,7 +285,7 @@ export default function ListsPage() {
       });
 
       if (res.ok) {
-        alert(`Lista "${listName}" guardada correctamente.`);
+        alert(isEditing ? `Lista "${listName}" actualizada correctamente.` : `Lista "${listName}" creada correctamente.`);
         handleResetCreator();
         fetchSegments();
       } else {
@@ -324,6 +344,8 @@ export default function ListsPage() {
       badges.push(`Actividad: ${actLabels[filters.activity] || filters.activity}`);
     }
     if (filters.utmSource) badges.push(`UTM Source: ${filters.utmSource}`);
+    if (filters.startDate) badges.push(`Desde: ${new Date(filters.startDate).toLocaleDateString('es-CL', { timeZone: 'UTC' })}`);
+    if (filters.endDate) badges.push(`Hasta: ${new Date(filters.endDate).toLocaleDateString('es-CL', { timeZone: 'UTC' })}`);
 
     if (badges.length === 0) return <span className="text-[10px] text-slate-400 italic">Sin filtros (Todos los leads)</span>;
 
@@ -446,10 +468,10 @@ export default function ListsPage() {
           <div className="border-b border-[#cbd6e2]/40 pb-4 flex justify-between items-center">
             <div>
               <h3 className="text-xl font-bold text-[#2d544c]">
-                {selectedSegment ? `Configuración de: ${selectedSegment.name}` : 'Creador de Listas y Segmentos'}
+                {selectedSegment ? `Editando Lista: ${selectedSegment.name}` : 'Creador de Listas y Segmentos'}
               </h3>
               <p className="text-xs text-[#516f90] mt-0.5">
-                {selectedSegment ? 'Inspecciona los parámetros de esta lista guardada.' : 'Elige el tipo de lista, configura los filtros y haz clic en Guardar.'}
+                {selectedSegment ? 'Modifica los parámetros de esta lista y guarda los cambios.' : 'Elige el tipo de lista, configura los filtros y haz clic en Guardar.'}
               </p>
             </div>
             {selectedSegment && (
@@ -461,7 +483,7 @@ export default function ListsPage() {
             )}
           </div>
 
-          <form onSubmit={handleSaveList} className="space-y-6">
+          <form onSubmit={(e) => handleSaveList(e)} className="space-y-6">
             
             {/* 1. Nombre y Tipo de Lista */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#f5f8fa]/50 p-4 rounded-xl border border-[#cbd6e2]/50">
@@ -473,7 +495,6 @@ export default function ListsPage() {
                   required
                   value={listName}
                   onChange={(e) => setListName(e.target.value)}
-                  disabled={!!selectedSegment}
                   className="w-full bg-white border border-[#cbd6e2] rounded-lg px-4 py-2.5 text-[#33475b] focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-sm font-medium transition-all"
                 />
               </div>
@@ -527,21 +548,20 @@ export default function ListsPage() {
               </div>
             )}
 
-            {/* 2. Filtros de Segmentación (Solo editables si estamos creando o si es dinámico) */}
-            {(!selectedSegment || selectedSegment.type === 'dynamic') && (
-              <div className="space-y-5">
-                <h4 className="text-xs font-bold text-[#516f90] uppercase tracking-wider border-b border-[#cbd6e2]/40 pb-2">Reglas de Segmentación</h4>
-                
-                {/* Fila 1: Filtros de Negocio */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-[#516f90] uppercase tracking-wider block">Estado del Contacto</label>
-                    <select 
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                      disabled={!!selectedSegment}
-                      className="w-full bg-[#f5f8fa] border-[#cbd6e2] border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-[#33475b] focus:bg-white"
-                    >
+            {/* 2. Filtros de Segmentación (Editables para creación/dinámicas, leídos para estáticas) */}
+            <div className="space-y-5">
+              <h4 className="text-xs font-bold text-[#516f90] uppercase tracking-wider border-b border-[#cbd6e2]/40 pb-2">Reglas de Segmentación</h4>
+              
+              {/* Fila 1: Filtros de Negocio */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-[#516f90] uppercase tracking-wider block">Estado del Contacto</label>
+                  <select 
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    disabled={selectedSegment?.type === 'static'}
+                    className="w-full bg-[#f5f8fa] border-[#cbd6e2] border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-[#33475b] focus:bg-white"
+                  >
                       <option value="">Todos los Estados</option>
                       <option value="Nuevo">Nuevo</option>
                       <option value="Contactado">Contactado</option>
@@ -555,7 +575,7 @@ export default function ListsPage() {
                     <select 
                       value={interestFilter}
                       onChange={(e) => setInterestFilter(e.target.value)}
-                      disabled={!!selectedSegment}
+                      disabled={selectedSegment?.type === 'static'}
                       className="w-full bg-[#f5f8fa] border-[#cbd6e2] border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-[#33475b] focus:bg-white"
                     >
                       <option value="">Todos los Intereses</option>
@@ -570,7 +590,7 @@ export default function ListsPage() {
                     <select 
                       value={projectFilter}
                       onChange={(e) => setProjectFilter(e.target.value)}
-                      disabled={!!selectedSegment}
+                      disabled={selectedSegment?.type === 'static'}
                       className="w-full bg-[#f5f8fa] border-[#cbd6e2] border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-[#33475b] focus:bg-white"
                     >
                       <option value="">Todos los Proyectos</option>
@@ -587,7 +607,7 @@ export default function ListsPage() {
                     <select 
                       value={activityFilter}
                       onChange={(e) => setActivityFilter(e.target.value)}
-                      disabled={!!selectedSegment}
+                      disabled={selectedSegment?.type === 'static'}
                       className="w-full bg-[#f5f8fa] border-[#cbd6e2] border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-[#33475b] focus:bg-white"
                     >
                       <option value="">Todas las Actividades</option>
@@ -607,7 +627,7 @@ export default function ListsPage() {
                         placeholder="Filtrar por nombre, correo..."
                         value={searchFilter}
                         onChange={(e) => setSearchFilter(e.target.value)}
-                        disabled={!!selectedSegment}
+                        disabled={selectedSegment?.type === 'static'}
                         className="w-full bg-[#f5f8fa] border border-[#cbd6e2] rounded-lg pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-[#2d544c]/20 outline-none focus:bg-white transition-all text-[#33475b]"
                       />
                     </div>
@@ -623,7 +643,7 @@ export default function ListsPage() {
                       <select 
                         value={utmSourceFilter}
                         onChange={(e) => setUtmSourceFilter(e.target.value)}
-                        disabled={!!selectedSegment}
+                        disabled={selectedSegment?.type === 'static'}
                         className="w-full bg-[#f5f8fa] border-[#cbd6e2] border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-[#33475b] focus:bg-white"
                       >
                         <option value="">Todos los UTM Sources</option>
@@ -636,7 +656,7 @@ export default function ListsPage() {
                       <select 
                         value={utmMediumFilter}
                         onChange={(e) => setUtmMediumFilter(e.target.value)}
-                        disabled={!!selectedSegment}
+                        disabled={selectedSegment?.type === 'static'}
                         className="w-full bg-[#f5f8fa] border-[#cbd6e2] border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-[#33475b] focus:bg-white"
                       >
                         <option value="">Todos los UTM Mediums</option>
@@ -649,12 +669,39 @@ export default function ListsPage() {
                       <select 
                         value={utmCampaignFilter}
                         onChange={(e) => setUtmCampaignFilter(e.target.value)}
-                        disabled={!!selectedSegment}
+                        disabled={selectedSegment?.type === 'static'}
                         className="w-full bg-[#f5f8fa] border-[#cbd6e2] border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-[#33475b] focus:bg-white"
                       >
                         <option value="">Todos los UTM Campaigns</option>
                         {utmCampaigns.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Fila 4: Filtros de Fecha de Creación */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-[#516f90] uppercase tracking-wider block">Filtro por Fecha de Creación (Ingreso)</span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-bold text-[#516f90]">Desde (Creado el o después)</span>
+                      <input 
+                        type="date" 
+                        value={startDateFilter}
+                        onChange={(e) => setStartDateFilter(e.target.value)}
+                        disabled={selectedSegment?.type === 'static'}
+                        className="w-full bg-[#f5f8fa] border-[#cbd6e2] border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-[#33475b] focus:bg-white transition-all"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-bold text-[#516f90]">Hasta (Creado el o antes)</span>
+                      <input 
+                        type="date" 
+                        value={endDateFilter}
+                        onChange={(e) => setEndDateFilter(e.target.value)}
+                        disabled={selectedSegment?.type === 'static'}
+                        className="w-full bg-[#f5f8fa] border-[#cbd6e2] border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-[#33475b] focus:bg-white transition-all"
+                      />
                     </div>
                   </div>
                 </div>
@@ -680,9 +727,7 @@ export default function ListsPage() {
                     ))}
                   </div>
                 </div>
-
               </div>
-            )}
 
             {/* 3. Previsualización de Destinatarios */}
             <div className="bg-white border border-[#cbd6e2] rounded-xl overflow-hidden shadow-sm">
@@ -743,9 +788,36 @@ export default function ListsPage() {
               </div>
             </div>
 
-            {/* Botón de Guardado */}
-            {!selectedSegment && (
-              <div className="flex justify-end pt-3">
+            {/* Botones de Guardado / Edición */}
+            <div className="flex justify-end gap-3 pt-3 flex-wrap">
+              {selectedSegment ? (
+                <>
+                  <button 
+                    type="button"
+                    onClick={handleResetCreator}
+                    className="px-4 py-2.5 border border-[#cbd6e2] bg-white text-[#33475b] hover:bg-[#f5f8fa] rounded-xl font-bold transition-all text-sm animate-fade-in"
+                  >
+                    Cancelar Edición
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => handleSaveList(e, true)}
+                    disabled={previewLoading || previewCount === 0}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-md disabled:opacity-50 text-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Guardar como Nueva Lista
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={previewLoading || previewCount === 0}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-[#2d544c] hover:bg-[#1f3a35] text-white rounded-xl font-bold transition-all shadow-md disabled:opacity-50 text-sm"
+                  >
+                    <Save className="w-4 h-4" />
+                    Guardar Cambios
+                  </button>
+                </>
+              ) : (
                 <button 
                   type="submit"
                   disabled={previewLoading || previewCount === 0}
@@ -754,8 +826,8 @@ export default function ListsPage() {
                   <Save className="w-4 h-4" />
                   Guardar Lista / Segmento
                 </button>
-              </div>
-            )}
+              )}
+            </div>
 
           </form>
         </div>

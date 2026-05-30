@@ -4,23 +4,73 @@ import { queryMarketing, queryMain } from '@/lib/db';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, name, phone, formid } = body;
+    const { email, name, phone, formid, adname, adName, pie, monto_pie, montoDePie, downpayment } = body;
 
     if (!email || !formid) {
       return NextResponse.json({ message: 'Email y FormID son requeridos' }, { status: 400 });
     }
 
-    // 1. Guardar o actualizar el lead en MAIN_DB
-    // Nota: El usuario dijo que el origen es "META"
-    await queryMain(`
-      INSERT INTO "Lead" (email, name, phone, source, formid, created_at)
-      VALUES ($1, $2, $3, 'META', $4, CURRENT_TIMESTAMP)
-      ON CONFLICT (email) DO UPDATE 
-      SET name = EXCLUDED.name, 
-          phone = EXCLUDED.phone, 
-          source = 'META', 
-          formid = EXCLUDED.formid
-    `, [email, name || '', phone || '', formid]);
+    const resolvedAdName = adname || adName || '';
+    const resolvedPie = pie || monto_pie || montoDePie || downpayment || '';
+
+    // 1. Descubrir esquema de columnas en la tabla "Lead" de MAIN_DB
+    let columns: string[] = [];
+    try {
+      const schemaRes = await queryMain(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'Lead'
+      `);
+      columns = schemaRes.rows.map((r: { column_name: string }) => r.column_name);
+    } catch (e) {
+      console.warn('Error descubriendo esquema en webhook meta:', (e as Error).message);
+    }
+
+    const findCol = (colName: string) => {
+      const match = columns.find(c => c.toLowerCase() === colName.toLowerCase());
+      return match ? `"${match}"` : null;
+    };
+
+    const emailCol = findCol('email') || '"email"';
+    const nameCol = findCol('name') || findCol('firstname') || '"name"';
+    const phoneCol = findCol('phone') || '"phone"';
+    const sourceCol = findCol('source') || '"source"';
+    const formIdCol = findCol('formid') || '"formid"';
+    const adNameCol = findCol('adname') || '"adname"';
+    const pieCol = findCol('pie') || '"pie"';
+
+    const insertCols = [emailCol, nameCol, phoneCol, sourceCol, formIdCol];
+    const insertVals: (string | number | Date)[] = [email, name || '', phone || '', 'META', formid];
+
+    if (resolvedAdName && columns.includes(adNameCol.replace(/"/g, ''))) {
+      insertCols.push(adNameCol);
+      insertVals.push(resolvedAdName);
+    }
+    if (resolvedPie && columns.includes(pieCol.replace(/"/g, ''))) {
+      insertCols.push(pieCol);
+      insertVals.push(resolvedPie);
+    }
+
+    const valuePlaceholders = insertVals.map((_, i) => `$${i + 1}`).join(', ');
+    const updateSets = insertCols
+      .filter(col => col !== emailCol)
+      .map(col => {
+        const rawCol = col.replace(/"/g, '');
+        if (rawCol === 'pie') {
+          return `${col} = CASE WHEN EXCLUDED.${col} IS NOT NULL AND EXCLUDED.${col} != '' THEN EXCLUDED.${col} ELSE "Lead".${col} END`;
+        }
+        return `${col} = EXCLUDED.${col}`;
+      })
+      .join(', ');
+
+    const insertQuery = `
+      INSERT INTO "Lead" (${insertCols.join(', ')})
+      VALUES (${valuePlaceholders})
+      ON CONFLICT (${emailCol}) DO UPDATE 
+      SET ${updateSets}
+    `;
+
+    await queryMain(insertQuery, insertVals);
 
     // 2. Buscar si hay una campaña automatizada para este FormID
     const campaignRes = await queryMarketing(`

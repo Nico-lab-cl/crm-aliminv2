@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { queryMarketing } from '@/lib/db';
+import { queryMarketing, queryMain } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -99,6 +99,27 @@ export async function GET() {
       results.push("Created 'segments' table.");
     } else {
       results.push("'segments' table already exists.");
+    }
+
+    // 6. Check if column 'pie' exists in "Lead" table in MAIN_DB
+    try {
+      const checkLeadPie = await queryMain(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'Lead' AND column_name = 'pie'
+      `);
+      if (checkLeadPie.rows.length === 0) {
+        await queryMain(`
+          ALTER TABLE "Lead" 
+          ADD COLUMN pie VARCHAR(255)
+        `);
+        results.push("Added 'pie' column to the 'Lead' table in Main DB.");
+      } else {
+        results.push("'pie' column already exists in 'Lead' table.");
+      }
+    } catch (e) {
+      console.warn("Could not alter 'Lead' table in Main DB (using mock/offline?):", (e as Error).message);
+      results.push("Main DB 'Lead' table pie check bypassed: " + (e as Error).message);
     }
 
     return NextResponse.json({

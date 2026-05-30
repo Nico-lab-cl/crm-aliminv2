@@ -36,6 +36,11 @@ interface Advisor {
   email?: string;
 }
 
+const getMontoPie = (lead: Lead | null) => {
+  if (!lead) return null;
+  return lead.pie || lead.monto_pie || lead.montoPie || lead.monto_de_pie || lead.montoDePie || lead.downpayment || lead.down_payment || null;
+};
+
 export default function ContactsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -1293,7 +1298,7 @@ export default function ContactsPage() {
                 )}
  
                 {/* Sección 4: Datos Técnicos (Meta Lead Ads) */}
-                {(selectedLead.formId || selectedLead.adName || selectedLead.adId || selectedLead.contactId) && (
+                {(selectedLead.formId || selectedLead.formid || selectedLead.adName || selectedLead.adname || selectedLead.adId || selectedLead.adid || selectedLead.contactId || selectedLead.contactid || getMontoPie(selectedLead)) && (
                   <div className="space-y-3 pt-3 border-t border-[#cbd6e2]/40">
                     <h4 className="text-xs font-bold text-[#516f90] uppercase tracking-wider flex items-center gap-1.5">
                       <FileText className="w-4 h-4 text-[#2d544c]" />
@@ -1301,28 +1306,34 @@ export default function ContactsPage() {
                     </h4>
                     
                     <div className="bg-slate-50 rounded-xl p-3 border border-[#cbd6e2]/60 space-y-2 text-xs">
-                      {selectedLead.formId && (
+                      {(selectedLead.formId || selectedLead.formid) && (
                         <div>
                           <p className="text-[10px] uppercase font-bold text-[#516f90]">ID Formulario</p>
-                          <p className="font-mono text-[#33475b] mt-0.5">{selectedLead.formId}</p>
+                          <p className="font-mono text-[#33475b] mt-0.5">{selectedLead.formId || selectedLead.formid}</p>
                         </div>
                       )}
-                      {selectedLead.adName && (
+                      {(selectedLead.adName || selectedLead.adname) && (
                         <div>
                           <p className="text-[10px] uppercase font-bold text-[#516f90]">Nombre del Anuncio</p>
-                          <p className="text-[#33475b] mt-0.5">{selectedLead.adName}</p>
+                          <p className="text-[#33475b] mt-0.5">{selectedLead.adName || selectedLead.adname}</p>
                         </div>
                       )}
-                      {selectedLead.adId && (
+                      {getMontoPie(selectedLead) && (
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-[#516f90]">Monto de Pie Dispuesto a Pagar</p>
+                          <p className="text-[#2d544c] font-bold mt-0.5">{getMontoPie(selectedLead)}</p>
+                        </div>
+                      )}
+                      {(selectedLead.adId || selectedLead.adid) && (
                         <div>
                           <p className="text-[10px] uppercase font-bold text-[#516f90]">ID del Anuncio</p>
-                          <p className="font-mono text-[#33475b] mt-0.5">{selectedLead.adId}</p>
+                          <p className="font-mono text-[#33475b] mt-0.5">{selectedLead.adId || selectedLead.adid}</p>
                         </div>
                       )}
-                      {selectedLead.contactId && (
+                      {(selectedLead.contactId || selectedLead.contactid) && (
                         <div>
                           <p className="text-[10px] uppercase font-bold text-[#516f90]">ID de Contacto (Meta)</p>
-                          <p className="font-mono text-[#33475b] mt-0.5">{selectedLead.contactId}</p>
+                          <p className="font-mono text-[#33475b] mt-0.5">{selectedLead.contactId || selectedLead.contactid}</p>
                         </div>
                       )}
                     </div>

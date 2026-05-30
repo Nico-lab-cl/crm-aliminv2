@@ -129,6 +129,18 @@ export async function executeCampaign(options: SendCampaingOptions) {
         whereClauses.push(`(${clauses})`);
       }
     }
+
+    // Filtros de fecha de creación
+    if (filtersAny?.startDate && columns.includes(createdAtCol.replace(/"/g, ''))) {
+      params.push(new Date(filtersAny.startDate));
+      whereClauses.push(`${createdAtCol} >= $${params.length}`);
+    }
+    if (filtersAny?.endDate && columns.includes(createdAtCol.replace(/"/g, ''))) {
+      const end = new Date(filtersAny.endDate);
+      end.setHours(23, 59, 59, 999);
+      params.push(end);
+      whereClauses.push(`${createdAtCol} <= $${params.length}`);
+    }
   }
 
   // Filtros Avanzados

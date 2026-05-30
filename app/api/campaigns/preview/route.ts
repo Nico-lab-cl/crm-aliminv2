@@ -145,12 +145,15 @@ export async function POST(request: Request) {
       });
     }
 
-    if (dateRange?.start && columns.includes(createdAtCol.replace(/"/g, ''))) {
-      params.push(new Date(dateRange.start));
+    const startVal = dateRange?.start || filters?.startDate;
+    const endVal = dateRange?.end || filters?.endDate;
+
+    if (startVal && columns.includes(createdAtCol.replace(/"/g, ''))) {
+      params.push(new Date(startVal));
       whereClauses.push(`${createdAtCol} >= $${params.length}`);
     }
-    if (dateRange?.end && columns.includes(createdAtCol.replace(/"/g, ''))) {
-      const endDateVal = new Date(dateRange.end);
+    if (endVal && columns.includes(createdAtCol.replace(/"/g, ''))) {
+      const endDateVal = new Date(endVal);
       endDateVal.setHours(23, 59, 59, 999);
       params.push(endDateVal);
       whereClauses.push(`${createdAtCol} <= $${params.length}`);
