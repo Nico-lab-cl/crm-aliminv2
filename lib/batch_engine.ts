@@ -433,9 +433,10 @@ async function processBatches(
         );
         const logId = logRes.rows[0].id;
 
-        // Build final HTML with tracking pixel
+        // Build final HTML with tracking pixel and link click tracking
         const trackingPixel = `<img src="${appUrl}/api/track/open?log_id=${logId}" width="1" height="1" style="display:none;" />`;
-        const finalHtml = campaign.html_content + trackingPixel;
+        const htmlWithTrackedLinks = rewriteHtmlLinks(campaign.html_content, logId, appUrl);
+        const finalHtml = htmlWithTrackedLinks + trackingPixel;
 
         // Send to n8n webhook
         const response = await fetch(n8nUrl, {
@@ -500,4 +501,21 @@ async function processBatches(
   }
   job.completedAt = new Date();
   console.log(`[BatchEngine] Job ${job.id}: Finished. Sent: ${job.processedLeads - job.failedLeads}, Failed: ${job.failedLeads}, Skipped (daily limit): ${job.skippedLeads}`);
+}
+
+function rewriteHtmlLinks(html: string, logId: string, appUrl: string): string {
+  if (!html) return html;
+  
+  // Exclude mailto, tel, # anchors, javascript, etc.
+  // Match only http/https urls inside href
+  const hrefRegex = /<a\s+(?:[^>]*?\s+)?href=["'](https?:\/\/[^"']+)["']/gi;
+  
+  return html.replace(hrefRegex, (match, url) => {
+    // If it's already a tracking URL, don't rewrite it again
+    if (url.includes('/api/track/')) {
+      return match;
+    }
+    const trackingUrl = `${appUrl}/api/track/click?log_id=${logId}&url=${encodeURIComponent(url)}`;
+    return match.replace(url, trackingUrl);
+  });
 }

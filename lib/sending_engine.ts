@@ -210,7 +210,8 @@ export async function executeCampaign(options: SendCampaingOptions) {
       const logId = logRes.rows[0].id;
 
       const trackingPixel = `<img src="${appUrl}/api/track/open?log_id=${logId}" width="1" height="1" style="display:none;" />`;
-      const finalHtml = campaign.html_content + trackingPixel;
+      const htmlWithTrackedLinks = rewriteHtmlLinks(campaign.html_content, logId, appUrl);
+      const finalHtml = htmlWithTrackedLinks + trackingPixel;
 
       fetch(n8nUrl, {
         method: 'POST',
@@ -255,7 +256,8 @@ export async function sendTestCampaign(campaignId: string, targetEmail: string) 
   const logId = logRes.rows[0].id;
 
   const trackingPixel = `<img src="${appUrl}/api/track/open?log_id=${logId}" width="1" height="1" style="display:none;" />`;
-  const finalHtml = campaign.html_content + trackingPixel;
+  const htmlWithTrackedLinks = rewriteHtmlLinks(campaign.html_content, logId, appUrl);
+  const finalHtml = htmlWithTrackedLinks + trackingPixel;
 
   await fetch(n8nUrl, {
     method: 'POST',
@@ -272,4 +274,21 @@ export async function sendTestCampaign(campaignId: string, targetEmail: string) 
   });
 
   return { success: true };
+}
+
+function rewriteHtmlLinks(html: string, logId: string, appUrl: string): string {
+  if (!html) return html;
+  
+  // Exclude mailto, tel, # anchors, javascript, etc.
+  // Match only http/https urls inside href
+  const hrefRegex = /<a\s+(?:[^>]*?\s+)?href=["'](https?:\/\/[^"']+)["']/gi;
+  
+  return html.replace(hrefRegex, (match, url) => {
+    // If it's already a tracking URL, don't rewrite it again
+    if (url.includes('/api/track/')) {
+      return match;
+    }
+    const trackingUrl = `${appUrl}/api/track/click?log_id=${logId}&url=${encodeURIComponent(url)}`;
+    return match.replace(url, trackingUrl);
+  });
 }
