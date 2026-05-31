@@ -23,7 +23,15 @@ const navItems = [
       { name: 'Listas y Segmentos', href: '/contacts/lists' }
     ]
   },
-  { name: 'Email Marketing', href: '/campaigns', icon: Mail },
+  { 
+    name: 'Email Marketing', 
+    href: '/campaigns', 
+    icon: Mail,
+    subItems: [
+      { name: 'Campañas', href: '/campaigns' },
+      { name: 'Métricas de Campañas', href: '/campaigns/metrics' }
+    ]
+  },
   { name: 'Métricas', href: '/metrics', icon: BarChart3 },
   { name: 'Configuración', href: '/settings', icon: Settings },
 ];

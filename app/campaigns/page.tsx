@@ -162,13 +162,16 @@ export default function CampaignsPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
-                       <div className="flex items-center justify-end gap-3 text-[#516f90]">
+                       <Link 
+                         href={`/campaigns/metrics?campaignId=${campaign.id}`}
+                         className="flex items-center justify-end gap-3 text-[#516f90] hover:text-[#2d544c] group/metrics transition-all"
+                       >
                          <div className="flex flex-col items-end">
-                            <span className="text-xs font-bold text-[#33475b]">--</span>
-                            <span className="text-[10px]">Enviados</span>
+                            <span className="text-xs font-bold text-[#33475b] group-hover/metrics:text-[#2d544c]">Ver</span>
+                            <span className="text-[10px] group-hover/metrics:underline">Métricas</span>
                          </div>
-                         <ChevronRight className="w-4 h-4 text-[#cbd6e2]" />
-                       </div>
+                         <ChevronRight className="w-4 h-4 text-[#cbd6e2] group-hover/metrics:translate-x-0.5 transition-transform" />
+                       </Link>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button className="p-2 rounded-lg hover:bg-[#cbd6e2]/20 text-[#516f90] opacity-0 group-hover:opacity-100 transition-opacity">

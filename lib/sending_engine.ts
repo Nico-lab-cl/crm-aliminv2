@@ -272,8 +272,8 @@ export async function sendTestCampaign(campaignId: string, targetEmail: string) 
   }
 
   const logRes = await queryMarketing(
-    `INSERT INTO campaign_logs (campaign_id, lead_id, email, status) 
-     VALUES ($1, $2, $3, 'TEST') RETURNING id`,
+    `INSERT INTO campaign_logs (campaign_id, lead_id, email, status, is_test) 
+     VALUES ($1, $2, $3, 'TEST', TRUE) RETURNING id`,
     [campaignId, leadId, targetEmail]
   );
   const logId = logRes.rows[0].id;

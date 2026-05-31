@@ -146,6 +146,23 @@ export async function GET() {
       results.push("Column 'last_clicked_at' already exists in campaign_logs.");
     }
 
+    // 4f. Check for 'is_test' in campaign_logs
+    const checkLogsIsTest = await queryMarketing(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'campaign_logs' AND column_name = 'is_test'
+    `);
+
+    if (checkLogsIsTest.rows.length === 0) {
+      await queryMarketing(`
+        ALTER TABLE campaign_logs 
+        ADD COLUMN is_test BOOLEAN DEFAULT FALSE
+      `);
+      results.push("Added 'is_test' column to campaign_logs table.");
+    } else {
+      results.push("Column 'is_test' already exists in campaign_logs.");
+    }
+
     // 5. Check if 'segments' table exists
     const checkSegmentsTable = await queryMarketing(`
       SELECT table_name 
