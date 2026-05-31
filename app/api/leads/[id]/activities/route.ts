@@ -3,6 +3,15 @@ import { queryMarketing, queryMain } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+interface ActivityEvent {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  date: string;
+  details?: Record<string, unknown>;
+}
+
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
@@ -54,7 +63,7 @@ export async function GET(
       console.warn('Error reading lead from Main DB:', e);
     }
 
-    const eventsList: any[] = [];
+    const eventsList: ActivityEvent[] = [];
 
     // 4. Agregar evento de creación del lead (si existe la fecha)
     if (leadCreatedAt) {
@@ -143,7 +152,7 @@ export async function GET(
         `, [id]);
 
         for (const act of activitiesRes.rows) {
-          let eventType = act.event_type;
+          const eventType = act.event_type;
           let title = 'Actividad Web';
           let description = 'El usuario realizó una acción en la web';
 
@@ -201,7 +210,7 @@ export async function GET(
 }
 
 // Filtro de rango de fechas para los eventos
-function filterEvents(events: any[], startDate: string, endDate: string) {
+function filterEvents(events: ActivityEvent[], startDate: string, endDate: string) {
   if (!startDate && !endDate) return events;
 
   const start = startDate ? new Date(startDate).getTime() : 0;
@@ -218,7 +227,7 @@ function filterEvents(events: any[], startDate: string, endDate: string) {
 }
 
 // Mock events generator when database is offline or not configured
-function getMockEvents(leadId: string) {
+function getMockEvents(leadId: string): ActivityEvent[] {
   const baseDate = new Date();
   return [
     {

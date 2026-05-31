@@ -73,7 +73,10 @@ interface TimelineEvent {
   title: string;
   description: string;
   date: string;
-  details?: any;
+  details?: {
+    page_url?: string;
+    form_data?: Record<string, unknown>;
+  };
 }
 
 export default function ContactsPage() {
@@ -131,7 +134,7 @@ export default function ContactsPage() {
 
   // Limpiar filtros al cambiar de contacto
   useEffect(() => {
-    if (selectedLead) {
+    if (selectedLead?.id) {
       setEventStartDate('');
       setEventEndDate('');
     }
@@ -1226,7 +1229,7 @@ export default function ContactsPage() {
                                     {/* Campos de formulario enviado */}
                                     {event.type === 'FORM_SUBMIT' && event.details?.form_data && (
                                       <div className="mt-2 bg-white/80 border border-slate-200/50 rounded-lg p-2 font-mono text-[10px] text-slate-600 max-h-32 overflow-y-auto">
-                                        {Object.entries(event.details.form_data).map(([k, v]: [string, any]) => (
+                                        {Object.entries(event.details.form_data).map(([k, v]) => (
                                           <div key={k} className="flex justify-between py-0.5 border-b border-slate-100 last:border-0 gap-4">
                                             <span className="font-semibold text-slate-500 shrink-0">{k}:</span>
                                             <span className="text-slate-800 break-all text-right font-medium">{String(v)}</span>

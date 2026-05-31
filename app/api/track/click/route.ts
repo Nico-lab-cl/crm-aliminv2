@@ -37,7 +37,7 @@ export async function GET(request: Request) {
       const parsedUrl = new URL(redirectUrl);
       parsedUrl.searchParams.set('lead_id', leadId);
       redirectUrl = parsedUrl.toString();
-    } catch (e) {
+    } catch {
       // Si la URL es relativa (ej: /lotes)
       const separator = redirectUrl.includes('?') ? '&' : '?';
       redirectUrl = `${redirectUrl}${separator}lead_id=${leadId}`;
