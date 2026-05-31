@@ -193,7 +193,7 @@ export async function executeCampaign(options: SendCampaingOptions) {
   const leadsRes = await queryMain(leadQuery, params);
   const leads = leadsRes.rows;
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://marketing.aliminlomasdelmar.com';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://marketing.aliminspa.cl';
   const n8nUrl = process.env.N8N_WEBHOOK_URL;
   if (!n8nUrl) throw new Error('N8N_WEBHOOK_URL no configurada');
 
@@ -244,7 +244,7 @@ export async function sendTestCampaign(campaignId: string, targetEmail: string) 
   if (campaignRes.rowCount === 0) throw new Error('Campaña no encontrada');
   const campaign = campaignRes.rows[0];
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://marketing.aliminlomasdelmar.com';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://marketing.aliminspa.cl';
   const n8nUrl = process.env.N8N_WEBHOOK_URL;
   if (!n8nUrl) throw new Error('N8N_WEBHOOK_URL no configurada');
 

@@ -383,7 +383,7 @@ async function processBatches(
 ) {
   job.status = 'RUNNING';
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://marketing.aliminlomasdelmar.com';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://marketing.aliminspa.cl';
   const n8nUrl = process.env.N8N_WEBHOOK_URL;
   if (!n8nUrl) {
     job.status = 'FAILED';

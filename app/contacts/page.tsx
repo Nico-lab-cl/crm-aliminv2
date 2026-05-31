@@ -21,7 +21,12 @@ import {
   Link2,
   Edit3,
   Map,
-  FileText
+  FileText,
+  Mail,
+  Eye,
+  ExternalLink,
+  Globe,
+  MousePointer
 } from 'lucide-react';
 
 interface Lead {
@@ -40,6 +45,36 @@ const getMontoPie = (lead: Lead | null) => {
   if (!lead) return null;
   return lead.pie || lead.monto_pie || lead.montoPie || lead.monto_de_pie || lead.montoDePie || lead.downpayment || lead.down_payment || null;
 };
+
+const getEventStyle = (type: string) => {
+  switch (type) {
+    case 'EMAIL_SENT':
+      return { icon: Mail, colorClass: 'bg-blue-500', bgClass: 'bg-blue-50/50', borderClass: 'border-blue-100' };
+    case 'EMAIL_OPENED':
+      return { icon: Eye, colorClass: 'bg-green-500', bgClass: 'bg-green-50/50', borderClass: 'border-green-100' };
+    case 'EMAIL_CLICKED':
+      return { icon: ExternalLink, colorClass: 'bg-amber-500', bgClass: 'bg-amber-50/50', borderClass: 'border-amber-100' };
+    case 'PAGE_VIEW':
+      return { icon: Globe, colorClass: 'bg-sky-500', bgClass: 'bg-sky-50/50', borderClass: 'border-sky-100' };
+    case 'FORM_SUBMIT':
+      return { icon: FileText, colorClass: 'bg-indigo-500', bgClass: 'bg-indigo-50/50', borderClass: 'border-indigo-100' };
+    case 'CLICK_BUTTON':
+      return { icon: MousePointer, colorClass: 'bg-violet-500', bgClass: 'bg-violet-50/50', borderClass: 'border-violet-100' };
+    case 'SYSTEM_CREATED':
+      return { icon: Check, colorClass: 'bg-emerald-500', bgClass: 'bg-emerald-50/50', borderClass: 'border-emerald-100' };
+    default:
+      return { icon: Clock, colorClass: 'bg-slate-500', bgClass: 'bg-slate-50/50', borderClass: 'border-slate-100' };
+  }
+};
+
+interface TimelineEvent {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  date: string;
+  details?: any;
+}
 
 export default function ContactsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -68,6 +103,48 @@ export default function ContactsPage() {
   const [activeTab, setActiveTab] = useState<'notes' | 'activity'>('notes');
   const [newNote, setNewNote] = useState('');
   const [isUpdatingField, setIsUpdatingField] = useState(false);
+
+  // Actividades del Lead
+  const [activities, setActivities] = useState<TimelineEvent[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(false);
+  const [eventStartDate, setEventStartDate] = useState('');
+  const [eventEndDate, setEventEndDate] = useState('');
+
+  const fetchActivities = useCallback(async (leadId: string, start = '', end = '') => {
+    setLoadingActivities(true);
+    try {
+      const params = new URLSearchParams();
+      if (start) params.set('startDate', start);
+      if (end) params.set('endDate', end);
+
+      const res = await fetch(`/api/leads/${leadId}/activities?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setActivities(data.events || []);
+      }
+    } catch (e) {
+      console.error('Error fetching activities:', e);
+    } finally {
+      setLoadingActivities(false);
+    }
+  }, []);
+
+  // Limpiar filtros al cambiar de contacto
+  useEffect(() => {
+    if (selectedLead) {
+      setEventStartDate('');
+      setEventEndDate('');
+    }
+  }, [selectedLead?.id]);
+
+  // Cargar actividades cuando cambie el lead o los filtros de fecha
+  useEffect(() => {
+    if (selectedLead) {
+      fetchActivities(selectedLead.id, eventStartDate, eventEndDate);
+    } else {
+      setActivities([]);
+    }
+  }, [selectedLead, eventStartDate, eventEndDate, fetchActivities]);
 
   useEffect(() => {
     if (selectedLead) {
@@ -1057,12 +1134,43 @@ export default function ContactsPage() {
                       </div>
  
                       {/* Línea de Tiempo de Actividades */}
-                      <div className="space-y-4 pt-2">
-                        <h4 className="text-xs font-bold text-[#516f90] uppercase tracking-wider">Historial de Eventos</h4>
-                        
-                        <div className="relative border-l-2 border-[#cbd6e2] ml-3 pl-6 space-y-6 py-2">
+                      <div className="space-y-4 pt-2 flex flex-col">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-bold text-[#516f90] uppercase tracking-wider">Historial de Eventos</h4>
                           
-                          {/* Nota Principal */}
+                          {/* Filtro de Fechas */}
+                          <div className="flex items-center gap-1.5 text-[11px]">
+                            <input 
+                              type="date"
+                              value={eventStartDate}
+                              onChange={(e) => setEventStartDate(e.target.value)}
+                              className="bg-white border border-[#cbd6e2] rounded px-1.5 py-0.5 text-[#33475b] outline-none text-xs"
+                              title="Fecha inicial"
+                            />
+                            <span className="text-slate-400">a</span>
+                            <input 
+                              type="date"
+                              value={eventEndDate}
+                              onChange={(e) => setEventEndDate(e.target.value)}
+                              className="bg-white border border-[#cbd6e2] rounded px-1.5 py-0.5 text-[#33475b] outline-none text-xs"
+                              title="Fecha final"
+                            />
+                            {(eventStartDate || eventEndDate) && (
+                              <button 
+                                onClick={() => { setEventStartDate(''); setEventEndDate(''); }}
+                                className="text-red-500 hover:text-red-700 hover:bg-slate-100 rounded p-0.5"
+                                title="Limpiar filtro de fecha"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Contenedor del Historial con Scroll Interno */}
+                        <div className="relative border-l-2 border-[#cbd6e2] ml-3 pl-6 space-y-6 py-2 max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
+                          
+                          {/* Nota Principal del Asesor (Fijada al inicio) */}
                           {selectedLead.notes && (
                             <div className="relative">
                               <div className="absolute -left-[31px] top-0 w-4 h-4 bg-amber-500 rounded-full border-2 border-white flex items-center justify-center">
@@ -1076,98 +1184,65 @@ export default function ContactsPage() {
                               </div>
                             </div>
                           )}
- 
-                          {/* Evento de Reserva (si el estado es Reservado o tiene datos de firma) */}
-                          {(getLeadStatus(selectedLead).toLowerCase() === 'reservado' || selectedLead.signingStatus) && (
-                            <div className="relative animate-fade-in">
-                              <div className="absolute -left-[31px] top-0 w-4 h-4 bg-purple-500 rounded-full border-2 border-white flex items-center justify-center">
-                                <Sparkles className="w-2 h-2 text-white" />
-                              </div>
-                              <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 shadow-sm text-xs text-[#33475b] space-y-1">
-                                <p className="font-bold text-purple-800 flex items-center gap-1">
-                                  <Sparkles className="w-3 h-3 text-purple-600 animate-pulse" /> Propiedad Reservada
-                                </p>
-                                <p className="leading-relaxed">El lead ha reservado con éxito un lote en el proyecto <span className="font-bold">{selectedLead.signingProject || getLeadProject(selectedLead)}</span>.</p>
-                                {selectedLead.signingLote && <p className="text-[11px] text-[#516f90]">Lote: {selectedLead.signingLote} | Etapa: {selectedLead.signingEtapa || '1'}</p>}
-                              </div>
-                            </div>
-                          )}
 
-                          {/* Evento de Visita (si visitó o tiene fecha de visita) */}
-                          {(selectedLead.visited || selectedLead.visitProject || selectedLead.visitDate) && (
-                            <div className="relative animate-fade-in">
-                              <div className="absolute -left-[31px] top-0 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
-                                <MapPin className="w-2 h-2 text-white" />
-                              </div>
-                              <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-3 shadow-sm text-xs text-[#33475b] space-y-1">
-                                <p className="font-bold text-emerald-800">Visita Terreno Agendada/Realizada</p>
-                                <p className="leading-relaxed">Se registró una visita presencial al proyecto <span className="font-bold">{selectedLead.visitProject || getLeadProject(selectedLead)}</span>.</p>
-                                {selectedLead.visitDate && <p className="text-[10px] text-[#516f90]">Fecha registrada: {new Date(selectedLead.visitDate).toLocaleString()}</p>}
-                              </div>
+                          {/* Actividades Dinámicas cargadas desde el API */}
+                          {loadingActivities ? (
+                            <div className="flex items-center justify-center py-12 text-slate-400 gap-2 text-xs font-semibold">
+                              <RefreshCcw className="w-4 h-4 animate-spin text-[#2d544c]" />
+                              <span>Cargando historial de actividad...</span>
                             </div>
-                          )}
+                          ) : activities.length === 0 ? (
+                            <div className="text-center py-12 text-xs text-slate-400 font-medium">
+                              No hay eventos ni actividades registradas.
+                            </div>
+                          ) : (
+                            activities.map((event) => {
+                              const style = getEventStyle(event.type);
+                              const Icon = style.icon;
+                              return (
+                                <div key={event.id} className="relative animate-fade-in">
+                                  <div className={`absolute -left-[31px] top-0 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center ${style.colorClass}`}>
+                                    <Icon className="w-2 h-2 text-white" />
+                                  </div>
+                                  <div className={`${style.bgClass} border ${style.borderClass} rounded-xl p-3 shadow-sm text-xs text-[#33475b] space-y-1`}>
+                                    <p className="font-bold text-slate-800">
+                                      {event.title}
+                                    </p>
+                                    <p className="leading-relaxed text-slate-600">{event.description}</p>
+                                    
+                                    {/* Enlace de página visitada */}
+                                    {event.type === 'PAGE_VIEW' && event.details?.page_url && (
+                                      <a 
+                                        href={event.details.page_url} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="text-[10px] text-sky-600 hover:underline flex items-center gap-1 font-mono font-medium truncate max-w-xs mt-1"
+                                      >
+                                        <Link2 className="w-3 h-3 shrink-0" />
+                                        {event.details.page_url}
+                                      </a>
+                                    )}
+                                    
+                                    {/* Campos de formulario enviado */}
+                                    {event.type === 'FORM_SUBMIT' && event.details?.form_data && (
+                                      <div className="mt-2 bg-white/80 border border-slate-200/50 rounded-lg p-2 font-mono text-[10px] text-slate-600 max-h-32 overflow-y-auto">
+                                        {Object.entries(event.details.form_data).map(([k, v]: [string, any]) => (
+                                          <div key={k} className="flex justify-between py-0.5 border-b border-slate-100 last:border-0 gap-4">
+                                            <span className="font-semibold text-slate-500 shrink-0">{k}:</span>
+                                            <span className="text-slate-800 break-all text-right font-medium">{String(v)}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
 
-                          {/* Registro de Actividad en Meta Ads (Si tiene formId o adName) */}
-                          {(selectedLead.formId || selectedLead.adName) && (
-                            <div className="relative animate-fade-in">
-                              <div className="absolute -left-[31px] top-0 w-4 h-4 bg-indigo-500 rounded-full border-2 border-white flex items-center justify-center">
-                                <FileText className="w-2 h-2 text-white" />
-                              </div>
-                              <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 shadow-sm text-xs text-[#33475b] space-y-1">
-                                <p className="font-bold text-indigo-800">Conversión de Meta Lead Ads</p>
-                                <p className="leading-relaxed">El usuario convirtió y envió sus datos desde un formulario de Facebook Ads.</p>
-                                <div className="text-[11px] text-[#516f90] mt-1 space-y-0.5">
-                                  {selectedLead.adName && <p><strong>Anuncio:</strong> {selectedLead.adName}</p>}
-                                  {selectedLead.formId && <p><strong>ID Formulario:</strong> {selectedLead.formId}</p>}
+                                    <p className="text-[9px] text-[#516f90] pt-1 font-semibold flex items-center gap-1">
+                                      <Clock className="w-3 h-3 text-slate-400" />
+                                      {new Date(event.date).toLocaleString()}
+                                    </p>
+                                  </div>
                                 </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Registro de Suscripción en la Web (Si tiene utmSource o intereses literal de la web) */}
-                          {(selectedLead.utmSource || selectedLead.utmCampaign || selectedLead.interests || selectedLead.Interests) && (
-                            <div className="relative animate-fade-in">
-                              <div className="absolute -left-[31px] top-0 w-4 h-4 bg-sky-500 rounded-full border-2 border-white flex items-center justify-center">
-                                <Link2 className="w-2 h-2 text-white" />
-                              </div>
-                              <div className="bg-sky-50/50 border border-sky-100 rounded-xl p-3 shadow-sm text-xs text-[#33475b] space-y-1">
-                                <p className="font-bold text-sky-800">Suscripción Web Activa</p>
-                                <p className="leading-relaxed">El usuario se registró en la web principal completando el formulario de contacto.</p>
-                                <div className="text-[11px] text-[#516f90] mt-1 space-y-0.5">
-                                  {selectedLead.utmSource && <p><strong>Origen UTM:</strong> {selectedLead.utmSource}</p>}
-                                  {selectedLead.utmCampaign && <p><strong>Campaña UTM:</strong> {selectedLead.utmCampaign}</p>}
-                                  {(selectedLead.interests || selectedLead.Interests) && <p><strong>Interés del sitio:</strong> {selectedLead.interests || selectedLead.Interests}</p>}
-                                </div>
-                              </div>
-                            </div>
-                          )}
- 
-                          {/* Evento de Ingreso Inicial */}
-                          <div className="relative">
-                            <div className="absolute -left-[31px] top-0 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
-                              <Check className="w-2 h-2 text-white" />
-                            </div>
-                            <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-3 shadow-sm text-xs text-[#33475b] space-y-1">
-                              <p className="font-bold text-emerald-800">Contacto Creado en el Sistema</p>
-                              <p className="leading-relaxed">Ingreso inicial registrado con origen principal <span className="font-bold">{getLeadSource(selectedLead)}</span>.</p>
-                              <p className="text-[10px] text-[#516f90]">{getLeadDate(selectedLead) ? new Date(getLeadDate(selectedLead)).toLocaleString() : '-'}</p>
-                            </div>
-                          </div>
- 
-                          {/* Evento de Última Actividad */}
-                          {selectedLead.lastActivity && (
-                            <div className="relative">
-                              <div className="absolute -left-[31px] top-0 w-4 h-4 bg-[#2d544c] rounded-full border-2 border-white flex items-center justify-center">
-                                <Clock className="w-2 h-2 text-white" />
-                              </div>
-                              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 shadow-sm text-xs text-[#33475b] space-y-1">
-                                <p className="font-bold text-slate-800">Última Actividad Registrada</p>
-                                <p className="leading-relaxed">{selectedLead.lastActivity}</p>
-                                {selectedLead.lastNoteAt && (
-                                  <p className="text-[10px] text-[#516f90]">{new Date(selectedLead.lastNoteAt).toLocaleString()}</p>
-                                )}
-                              </div>
-                            </div>
+                              );
+                            })
                           )}
                         </div>
                       </div>

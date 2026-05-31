@@ -22,7 +22,9 @@
         "sendTo": "=={{ $json.body.email }}",
         "subject": "=={{ $json.body.subject }}",
         "message": "=={{ $json.body.html }}",
-        "options": {}
+        "options": {
+          "appendAttribution": false
+        }
       },
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,

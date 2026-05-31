@@ -190,6 +190,30 @@ export async function GET() {
       results.push("Main DB 'Lead' table pie check bypassed: " + (e as Error).message);
     }
 
+    // 7. Check if 'lead_activities' table exists
+    const checkLeadActivitiesTable = await queryMarketing(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_name = 'lead_activities'
+    `);
+
+    if (checkLeadActivitiesTable.rows.length === 0) {
+      await queryMarketing(`
+        CREATE TABLE lead_activities (
+          id SERIAL PRIMARY KEY,
+          lead_id UUID NOT NULL,
+          event_type VARCHAR(100) NOT NULL,
+          page_url TEXT,
+          page_title VARCHAR(255),
+          details JSONB,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      results.push("Created 'lead_activities' table.");
+    } else {
+      results.push("'lead_activities' table already exists.");
+    }
+
     return NextResponse.json({
       success: true,
       message: "Database schema update check completed.",
