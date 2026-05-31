@@ -157,9 +157,9 @@ export async function GET(
           let title = 'Actividad Web';
           let description = 'El usuario realizó una acción en la web';
 
-          if (eventType === 'PAGE_VIEW') {
+          if (eventType === 'PAGE_VIEW' || eventType === 'PAGE_VISIT') {
             title = 'Página Web Visitada';
-            description = `Visitó la página "${act.page_title || 'Sin Título'}"`;
+            description = `Visitó la página "${act.page_title || 'Sin Título'}" (${act.page_url || ''})`;
           } else if (eventType === 'FORM_SUBMIT') {
             const formName = act.details?.form_name || 'Formulario';
             title = `Formulario Enviado: ${formName}`;
