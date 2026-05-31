@@ -142,7 +142,8 @@ export async function GET(request: Request) {
     const statusCol = findCol('status') || '"Status"';
     const sourceCol = findCol('source') || '"Source"';
     const projectCol = findCol('project') || '"Project"';
-    const createdAtCol = findCol('createdat') || findCol('created_at') || '"CreatedAt"';
+    const rawCreatedAtCol = findCol('createdat') || findCol('created_at') || findCol('created');
+    const createdAtCol = rawCreatedAtCol || '"CreatedAt"';
 
     if (ids) {
       const idCol = findCol('id') || '"id"';
@@ -284,11 +285,11 @@ export async function GET(request: Request) {
       }
 
       // Filtro por rango de fechas de creación
-      if (startDate && columns.includes(createdAtCol.replace(/"/g, ''))) {
+      if (startDate && rawCreatedAtCol) {
         params.push(new Date(startDate));
         whereClauses.push(`${createdAtCol} >= $${params.length}`);
       }
-      if (endDate && columns.includes(createdAtCol.replace(/"/g, ''))) {
+      if (endDate && rawCreatedAtCol) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
         params.push(end);
@@ -317,7 +318,7 @@ export async function GET(request: Request) {
       SELECT ${selectFields}
       FROM "Lead" 
       WHERE ${whereStr} 
-      ORDER BY ${columns.includes(createdAtCol.replace(/"/g, '')) ? createdAtCol : '1'} DESC NULLS LAST
+      ORDER BY ${rawCreatedAtCol ? createdAtCol : '1'} DESC NULLS LAST
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `;
 

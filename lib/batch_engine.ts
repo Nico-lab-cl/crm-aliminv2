@@ -149,7 +149,8 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
   const utmMediumCol = findCol('utmmedium') || '"utmMedium"';
   const utmCampaignCol = findCol('utmcampaign') || '"utmCampaign"';
   const idCol = findCol('id') || '"id"';
-  const createdAtCol = findCol('createdat') || findCol('created_at') || '"createdAt"';
+  const rawCreatedAtCol = findCol('createdat') || findCol('created_at') || findCol('created');
+  const createdAtCol = rawCreatedAtCol || '"createdAt"';
   const emailCol = findCol('email') || '"email"';
   const firstNameCol = findCol('firstname') || findCol('first_name') || '"FirstName"';
 
@@ -234,11 +235,11 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
     }
 
     // Date filters from segment
-    if (filtersAny?.startDate && columns.includes(createdAtCol.replace(/"/g, ''))) {
+    if (filtersAny?.startDate && rawCreatedAtCol) {
       params.push(new Date(filtersAny.startDate));
       whereClauses.push(`${createdAtCol} >= $${params.length}`);
     }
-    if (filtersAny?.endDate && columns.includes(createdAtCol.replace(/"/g, ''))) {
+    if (filtersAny?.endDate && rawCreatedAtCol) {
       const end = new Date(filtersAny.endDate);
       end.setHours(23, 59, 59, 999);
       params.push(end);
@@ -273,11 +274,11 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
   }
 
   // Date range
-  if (dateRange?.start && columns.includes(createdAtCol.replace(/"/g, ''))) {
+  if (dateRange?.start && rawCreatedAtCol) {
     params.push(new Date(dateRange.start));
     whereClauses.push(`${createdAtCol} >= $${params.length}`);
   }
-  if (dateRange?.end && columns.includes(createdAtCol.replace(/"/g, ''))) {
+  if (dateRange?.end && rawCreatedAtCol) {
     const endDateVal = new Date(dateRange.end);
     endDateVal.setHours(23, 59, 59, 999);
     params.push(endDateVal);
@@ -289,7 +290,7 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
     SELECT DISTINCT ON (${emailCol}) ${idCol} as id, ${emailCol} as email${columns.includes(firstNameCol.replace(/"/g, '')) ? `, ${firstNameCol} as firstname` : ''}
     FROM "Lead" 
     WHERE ${whereString} 
-    ORDER BY ${emailCol}, ${columns.includes(createdAtCol.replace(/"/g, '')) ? createdAtCol : '1'} DESC
+    ORDER BY ${emailCol}, ${rawCreatedAtCol ? createdAtCol : '1'} DESC
   `;
 
   const leadsRes = await queryMain(leadQuery, params);

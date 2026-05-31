@@ -45,7 +45,8 @@ export async function executeCampaign(options: SendCampaingOptions) {
   const utmMediumCol = findCol('utmmedium') || '"utmMedium"';
   const utmCampaignCol = findCol('utmcampaign') || '"utmCampaign"';
   const idCol = findCol('id') || '"id"';
-  const createdAtCol = findCol('createdat') || findCol('created_at') || '"createdAt"';
+  const rawCreatedAtCol = findCol('createdat') || findCol('created_at') || findCol('created');
+  const createdAtCol = rawCreatedAtCol || '"createdAt"';
 
   const whereClauses = ['email IS NOT NULL AND email != \'\''];
   const params: (string | number | Date | string[])[] = [];
@@ -131,11 +132,11 @@ export async function executeCampaign(options: SendCampaingOptions) {
     }
 
     // Filtros de fecha de creación
-    if (filtersAny?.startDate && columns.includes(createdAtCol.replace(/"/g, ''))) {
+    if (filtersAny?.startDate && rawCreatedAtCol) {
       params.push(new Date(filtersAny.startDate));
       whereClauses.push(`${createdAtCol} >= $${params.length}`);
     }
-    if (filtersAny?.endDate && columns.includes(createdAtCol.replace(/"/g, ''))) {
+    if (filtersAny?.endDate && rawCreatedAtCol) {
       const end = new Date(filtersAny.endDate);
       end.setHours(23, 59, 59, 999);
       params.push(end);
@@ -170,11 +171,11 @@ export async function executeCampaign(options: SendCampaingOptions) {
   }
 
   // Filtro de Fecha
-  if (dateRange?.start && columns.includes(createdAtCol.replace(/"/g, ''))) {
+  if (dateRange?.start && rawCreatedAtCol) {
     params.push(new Date(dateRange.start));
     whereClauses.push(`${createdAtCol} >= $${params.length}`);
   }
-  if (dateRange?.end && columns.includes(createdAtCol.replace(/"/g, ''))) {
+  if (dateRange?.end && rawCreatedAtCol) {
     const endDateVal = new Date(dateRange.end);
     endDateVal.setHours(23, 59, 59, 999);
     params.push(endDateVal);
@@ -187,7 +188,7 @@ export async function executeCampaign(options: SendCampaingOptions) {
     SELECT DISTINCT ON (email) id, email 
     FROM "Lead" 
     WHERE ${whereString} 
-    ORDER BY email, ${columns.includes(createdAtCol.replace(/"/g, '')) ? createdAtCol : '1'} DESC
+    ORDER BY email, ${rawCreatedAtCol ? createdAtCol : '1'} DESC
   `;
 
   const leadsRes = await queryMain(leadQuery, params);

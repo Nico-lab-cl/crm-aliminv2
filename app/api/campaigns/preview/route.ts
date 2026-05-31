@@ -34,7 +34,8 @@ export async function POST(request: Request) {
     const utmMediumCol = findCol('utmmedium') || '"utmMedium"';
     const utmCampaignCol = findCol('utmcampaign') || '"utmCampaign"';
     const idCol = findCol('id') || '"id"';
-    const createdAtCol = findCol('createdat') || findCol('created_at') || '"createdAt"';
+    const rawCreatedAtCol = findCol('createdat') || findCol('created_at') || findCol('created');
+    const createdAtCol = rawCreatedAtCol || '"createdAt"';
     const emailCol = findCol('email') || '"email"';
 
     const firstNameCol = findCol('firstname') || findCol('first_name') || '"FirstName"';
@@ -151,11 +152,11 @@ export async function POST(request: Request) {
     const startVal = dateRange?.start || filters?.startDate;
     const endVal = dateRange?.end || filters?.endDate;
 
-    if (startVal && columns.includes(createdAtCol.replace(/"/g, ''))) {
+    if (startVal && rawCreatedAtCol) {
       params.push(new Date(startVal));
       whereClauses.push(`${createdAtCol} >= $${params.length}`);
     }
-    if (endVal && columns.includes(createdAtCol.replace(/"/g, ''))) {
+    if (endVal && rawCreatedAtCol) {
       const endDateVal = new Date(endVal);
       endDateVal.setHours(23, 59, 59, 999);
       params.push(endDateVal);
@@ -189,11 +190,11 @@ export async function POST(request: Request) {
         ${idCol} as id, 
         ${emailCol} as email, 
         ${columns.includes(firstNameCol.replace(/"/g, '')) ? `${firstNameCol} as firstname, ` : ''} 
-        ${columns.includes(createdAtCol.replace(/"/g, '')) ? `${createdAtCol} as createdat` : '1 as createdat'}
+        ${rawCreatedAtCol ? `${createdAtCol} as createdat` : '1 as createdat'}
       FROM "Lead" 
       WHERE ${whereString} 
         AND ${emailCol} IS NOT NULL AND ${emailCol} != ''
-      ORDER BY ${emailCol}, ${columns.includes(createdAtCol.replace(/"/g, '')) ? createdAtCol : '1'} DESC
+      ORDER BY ${emailCol}, ${rawCreatedAtCol ? createdAtCol : '1'} DESC
     `, params);
 
     const allLeads = leadsRes.rows;
