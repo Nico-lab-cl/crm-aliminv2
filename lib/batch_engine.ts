@@ -151,7 +151,7 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
   const utmCampaignCol = findCol('utmcampaign') || '"utmCampaign"';
   const idCol = findCol('id') || '"id"';
   const rawCreatedAtCol = findCol('createdat') || findCol('created_at') || findCol('created');
-  const createdAtCol = rawCreatedAtCol || '"createdAt"';
+  const createdAtCol = rawCreatedAtCol || '"CreatedAt"';
   const emailCol = findCol('email') || '"email"';
   const firstNameCol = findCol('firstname') || findCol('first_name') || '"FirstName"';
 
@@ -236,14 +236,14 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
     }
 
     // Date filters from segment
-    if (filtersAny?.startDate && rawCreatedAtCol) {
+    if (filtersAny?.startDate && createdAtCol) {
       const startParsed = parseDateRobust(filtersAny.startDate);
       if (startParsed) {
         params.push(startParsed);
         whereClauses.push(`${createdAtCol} >= $${params.length}`);
       }
     }
-    if (filtersAny?.endDate && rawCreatedAtCol) {
+    if (filtersAny?.endDate && createdAtCol) {
       const endParsed = parseDateRobust(filtersAny.endDate);
       if (endParsed) {
         endParsed.setHours(23, 59, 59, 999);
@@ -280,14 +280,14 @@ export async function startBatchExecution(options: BatchExecuteOptions): Promise
   }
 
   // Date range
-  if (dateRange?.start && rawCreatedAtCol) {
+  if (dateRange?.start && createdAtCol) {
     const startParsed = parseDateRobust(dateRange.start);
     if (startParsed) {
       params.push(startParsed);
       whereClauses.push(`${createdAtCol} >= $${params.length}`);
     }
   }
-  if (dateRange?.end && rawCreatedAtCol) {
+  if (dateRange?.end && createdAtCol) {
     const endParsed = parseDateRobust(dateRange.end);
     if (endParsed) {
       endParsed.setHours(23, 59, 59, 999);

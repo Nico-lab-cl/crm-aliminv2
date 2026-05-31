@@ -298,14 +298,14 @@ export async function GET(request: Request) {
 
       // Filtro por rango de fechas de creación
       console.log('GET /api/leads: Filtering by date:', { startDate, endDate, rawCreatedAtCol, createdAtCol });
-      if (startDate && rawCreatedAtCol) {
+      if (startDate && createdAtCol) {
         const startParsed = parseDateRobust(startDate);
         if (startParsed) {
           params.push(startParsed);
           whereClauses.push(`${createdAtCol} >= $${params.length}`);
         }
       }
-      if (endDate && rawCreatedAtCol) {
+      if (endDate && createdAtCol) {
         const endParsed = parseDateRobust(endDate);
         if (endParsed) {
           endParsed.setHours(23, 59, 59, 999);

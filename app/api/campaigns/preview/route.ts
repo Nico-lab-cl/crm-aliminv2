@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     const utmCampaignCol = findCol('utmcampaign') || '"utmCampaign"';
     const idCol = findCol('id') || '"id"';
     const rawCreatedAtCol = findCol('createdat') || findCol('created_at') || findCol('created');
-    const createdAtCol = rawCreatedAtCol || '"createdAt"';
+    const createdAtCol = rawCreatedAtCol || '"CreatedAt"';
     const emailCol = findCol('email') || '"email"';
 
     const firstNameCol = findCol('firstname') || findCol('first_name') || '"FirstName"';
@@ -153,14 +153,14 @@ export async function POST(request: Request) {
     const startVal = dateRange?.start || filters?.startDate;
     const endVal = dateRange?.end || filters?.endDate;
 
-    if (startVal && rawCreatedAtCol) {
+    if (startVal && createdAtCol) {
       const startParsed = parseDateRobust(startVal);
       if (startParsed) {
         params.push(startParsed);
         whereClauses.push(`${createdAtCol} >= $${params.length}`);
       }
     }
-    if (endVal && rawCreatedAtCol) {
+    if (endVal && createdAtCol) {
       const endParsed = parseDateRobust(endVal);
       if (endParsed) {
         endParsed.setHours(23, 59, 59, 999);

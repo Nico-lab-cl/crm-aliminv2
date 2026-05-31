@@ -47,7 +47,7 @@ export async function executeCampaign(options: SendCampaingOptions) {
   const utmCampaignCol = findCol('utmcampaign') || '"utmCampaign"';
   const idCol = findCol('id') || '"id"';
   const rawCreatedAtCol = findCol('createdat') || findCol('created_at') || findCol('created');
-  const createdAtCol = rawCreatedAtCol || '"createdAt"';
+  const createdAtCol = rawCreatedAtCol || '"CreatedAt"';
 
   const whereClauses = ['email IS NOT NULL AND email != \'\''];
   const params: (string | number | Date | string[])[] = [];
@@ -133,14 +133,14 @@ export async function executeCampaign(options: SendCampaingOptions) {
     }
 
     // Filtros de fecha de creación
-    if (filtersAny?.startDate && rawCreatedAtCol) {
+    if (filtersAny?.startDate && createdAtCol) {
       const startParsed = parseDateRobust(filtersAny.startDate);
       if (startParsed) {
         params.push(startParsed);
         whereClauses.push(`${createdAtCol} >= $${params.length}`);
       }
     }
-    if (filtersAny?.endDate && rawCreatedAtCol) {
+    if (filtersAny?.endDate && createdAtCol) {
       const endParsed = parseDateRobust(filtersAny.endDate);
       if (endParsed) {
         endParsed.setHours(23, 59, 59, 999);
@@ -177,14 +177,14 @@ export async function executeCampaign(options: SendCampaingOptions) {
   }
 
   // Filtro de Fecha
-  if (dateRange?.start && rawCreatedAtCol) {
+  if (dateRange?.start && createdAtCol) {
     const startParsed = parseDateRobust(dateRange.start);
     if (startParsed) {
       params.push(startParsed);
       whereClauses.push(`${createdAtCol} >= $${params.length}`);
     }
   }
-  if (dateRange?.end && rawCreatedAtCol) {
+  if (dateRange?.end && createdAtCol) {
     const endParsed = parseDateRobust(dateRange.end);
     if (endParsed) {
       endParsed.setHours(23, 59, 59, 999);
