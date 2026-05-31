@@ -1,4 +1,5 @@
 import { queryMain, queryMarketing } from '@/lib/db';
+import { parseDateRobust } from '@/lib/date_utils';
 
 interface SendCampaingOptions {
   campaignId: string;
@@ -133,14 +134,19 @@ export async function executeCampaign(options: SendCampaingOptions) {
 
     // Filtros de fecha de creación
     if (filtersAny?.startDate && rawCreatedAtCol) {
-      params.push(new Date(filtersAny.startDate));
-      whereClauses.push(`${createdAtCol} >= $${params.length}`);
+      const startParsed = parseDateRobust(filtersAny.startDate);
+      if (startParsed) {
+        params.push(startParsed);
+        whereClauses.push(`${createdAtCol} >= $${params.length}`);
+      }
     }
     if (filtersAny?.endDate && rawCreatedAtCol) {
-      const end = new Date(filtersAny.endDate);
-      end.setHours(23, 59, 59, 999);
-      params.push(end);
-      whereClauses.push(`${createdAtCol} <= $${params.length}`);
+      const endParsed = parseDateRobust(filtersAny.endDate);
+      if (endParsed) {
+        endParsed.setHours(23, 59, 59, 999);
+        params.push(endParsed);
+        whereClauses.push(`${createdAtCol} <= $${params.length}`);
+      }
     }
   }
 
@@ -172,14 +178,19 @@ export async function executeCampaign(options: SendCampaingOptions) {
 
   // Filtro de Fecha
   if (dateRange?.start && rawCreatedAtCol) {
-    params.push(new Date(dateRange.start));
-    whereClauses.push(`${createdAtCol} >= $${params.length}`);
+    const startParsed = parseDateRobust(dateRange.start);
+    if (startParsed) {
+      params.push(startParsed);
+      whereClauses.push(`${createdAtCol} >= $${params.length}`);
+    }
   }
   if (dateRange?.end && rawCreatedAtCol) {
-    const endDateVal = new Date(dateRange.end);
-    endDateVal.setHours(23, 59, 59, 999);
-    params.push(endDateVal);
-    whereClauses.push(`${createdAtCol} <= $${params.length}`);
+    const endParsed = parseDateRobust(dateRange.end);
+    if (endParsed) {
+      endParsed.setHours(23, 59, 59, 999);
+      params.push(endParsed);
+      whereClauses.push(`${createdAtCol} <= $${params.length}`);
+    }
   }
 
   const whereString = whereClauses.join(' AND ');

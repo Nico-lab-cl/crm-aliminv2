@@ -231,6 +231,52 @@ export async function GET() {
       results.push("'lead_activities' table already exists.");
     }
 
+    // 8. Debug info for Lead table columns and date range counts
+    try {
+      const colsRes = await queryMain(`
+        SELECT column_name, data_type 
+        FROM information_schema.columns 
+        WHERE table_name = 'Lead'
+      `);
+      const cols = colsRes.rows.map(r => `${r.column_name} (${r.data_type})`);
+      results.push("Lead Columns in Main DB: " + cols.join(', '));
+
+      const countRes = await queryMain('SELECT COUNT(*) as total FROM "Lead"');
+      results.push("Total Leads in Main DB: " + countRes.rows[0].total);
+
+      // Try searching for the creation date column
+      const findCol = (name: string) => {
+        const match = colsRes.rows.map(r => r.column_name).find(c => c.toLowerCase() === name.toLowerCase());
+        return match ? `"${match}"` : null;
+      };
+      const rawCreatedAtCol = findCol('createdat') || findCol('created_at') || findCol('created');
+      
+      if (rawCreatedAtCol) {
+        results.push(`Found creation date column: ${rawCreatedAtCol}`);
+        
+        // Count with specific range
+        const testRangeRes = await queryMain(`
+          SELECT COUNT(*) as total 
+          FROM "Lead" 
+          WHERE ${rawCreatedAtCol} >= $1 AND ${rawCreatedAtCol} <= $2
+        `, [new Date('2025-10-01'), new Date('2026-05-31T23:59:59.999Z')]);
+        results.push(`Leads created between 2025-10-01 and 2026-05-31: ${testRangeRes.rows[0].total}`);
+        
+        // Count before Oct 2025
+        const testBeforeRes = await queryMain(`
+          SELECT COUNT(*) as total 
+          FROM "Lead" 
+          WHERE ${rawCreatedAtCol} < $1
+        `, [new Date('2025-10-01')]);
+        results.push(`Leads created before 2025-10-01: ${testBeforeRes.rows[0].total}`);
+      } else {
+        results.push("No creation date column found in information_schema for table Lead.");
+      }
+
+    } catch (err) {
+      results.push("Error debugging Lead table: " + (err as Error).message);
+    }
+
     return NextResponse.json({
       success: true,
       message: "Database schema update check completed.",

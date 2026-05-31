@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { queryMain, queryMarketing } from '@/lib/db';
+import { parseDateRobust } from '@/lib/date_utils';
 
 export async function POST(request: Request) {
   try {
@@ -153,14 +154,19 @@ export async function POST(request: Request) {
     const endVal = dateRange?.end || filters?.endDate;
 
     if (startVal && rawCreatedAtCol) {
-      params.push(new Date(startVal));
-      whereClauses.push(`${createdAtCol} >= $${params.length}`);
+      const startParsed = parseDateRobust(startVal);
+      if (startParsed) {
+        params.push(startParsed);
+        whereClauses.push(`${createdAtCol} >= $${params.length}`);
+      }
     }
     if (endVal && rawCreatedAtCol) {
-      const endDateVal = new Date(endVal);
-      endDateVal.setHours(23, 59, 59, 999);
-      params.push(endDateVal);
-      whereClauses.push(`${createdAtCol} <= $${params.length}`);
+      const endParsed = parseDateRobust(endVal);
+      if (endParsed) {
+        endParsed.setHours(23, 59, 59, 999);
+        params.push(endParsed);
+        whereClauses.push(`${createdAtCol} <= $${params.length}`);
+      }
     }
 
     const whereString = whereClauses.join(' AND ');

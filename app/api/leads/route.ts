@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { queryMain } from '@/lib/db';
 import { MOCK_LEADS } from '@/lib/mock_db';
+import { parseDateRobust } from '@/lib/date_utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,14 +71,25 @@ export async function GET(request: Request) {
           filtered = filtered.filter(l => l.Project.toLowerCase() === project.toLowerCase());
         }
         if (startDate) {
-          const start = new Date(startDate).getTime();
-          filtered = filtered.filter(l => new Date(l.CreatedAt).getTime() >= start);
+          const startParsed = parseDateRobust(startDate);
+          if (startParsed) {
+            const startTime = startParsed.getTime();
+            filtered = filtered.filter(l => {
+              const leadDate = parseDateRobust(l.CreatedAt);
+              return leadDate ? leadDate.getTime() >= startTime : false;
+            });
+          }
         }
         if (endDate) {
-          const end = new Date(endDate);
-          end.setHours(23, 59, 59, 999);
-          const endTime = end.getTime();
-          filtered = filtered.filter(l => new Date(l.CreatedAt).getTime() <= endTime);
+          const endParsed = parseDateRobust(endDate);
+          if (endParsed) {
+            endParsed.setHours(23, 59, 59, 999);
+            const endTime = endParsed.getTime();
+            filtered = filtered.filter(l => {
+              const leadDate = parseDateRobust(l.CreatedAt);
+              return leadDate ? leadDate.getTime() <= endTime : false;
+            });
+          }
         }
         if (interest) {
           filtered = filtered.filter(l => {
@@ -287,14 +299,19 @@ export async function GET(request: Request) {
       // Filtro por rango de fechas de creación
       console.log('GET /api/leads: Filtering by date:', { startDate, endDate, rawCreatedAtCol, createdAtCol });
       if (startDate && rawCreatedAtCol) {
-        params.push(new Date(startDate));
-        whereClauses.push(`${createdAtCol} >= $${params.length}`);
+        const startParsed = parseDateRobust(startDate);
+        if (startParsed) {
+          params.push(startParsed);
+          whereClauses.push(`${createdAtCol} >= $${params.length}`);
+        }
       }
       if (endDate && rawCreatedAtCol) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        params.push(end);
-        whereClauses.push(`${createdAtCol} <= $${params.length}`);
+        const endParsed = parseDateRobust(endDate);
+        if (endParsed) {
+          endParsed.setHours(23, 59, 59, 999);
+          params.push(endParsed);
+          whereClauses.push(`${createdAtCol} <= $${params.length}`);
+        }
       }
     }
 
