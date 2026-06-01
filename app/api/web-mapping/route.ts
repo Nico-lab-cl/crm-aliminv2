@@ -10,33 +10,50 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '100', 10);
     const offset = parseInt(searchParams.get('offset') || '0', 10);
 
-    // 1. Construir query de actividades
-    let queryText = `
-      SELECT id, lead_id, anonymous_id, event_type, page_url, page_title, details, created_at
-      FROM lead_activities
-    `;
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+
+    // 1. Construir query de actividades con filtros
+    const conditions: string[] = [];
     const params: unknown[] = [];
 
     if (filter === 'anonymous') {
-      queryText += ` WHERE lead_id IS NULL`;
+      conditions.push(`lead_id IS NULL`);
     } else if (filter === 'identified') {
-      queryText += ` WHERE lead_id IS NOT NULL`;
+      conditions.push(`lead_id IS NOT NULL`);
     }
 
-    queryText += ` ORDER BY created_at DESC LIMIT $1 OFFSET $2`;
+    if (startDate) {
+      params.push(startDate);
+      conditions.push(`created_at >= $${params.length}`);
+    }
+    if (endDate) {
+      params.push(`${endDate} 23:59:59.999`);
+      conditions.push(`created_at <= $${params.length}`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const queryText = `
+      SELECT id, lead_id, anonymous_id, event_type, page_url, page_title, details, created_at
+      FROM lead_activities
+      ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `;
+
+    // Parámetros para la consulta de conteo (sin limit ni offset)
+    const countParams = [...params];
+
+    // Agregar limit y offset a los parámetros principales
     params.push(limit, offset);
 
     const activitiesRes = await queryMarketing(queryText, params);
     const activities = activitiesRes.rows;
 
     // 2. Obtener total count para paginación
-    let countQuery = `SELECT COUNT(*) as count FROM lead_activities`;
-    if (filter === 'anonymous') {
-      countQuery += ` WHERE lead_id IS NULL`;
-    } else if (filter === 'identified') {
-      countQuery += ` WHERE lead_id IS NOT NULL`;
-    }
-    const countRes = await queryMarketing(countQuery);
+    const countQuery = `SELECT COUNT(*) as count FROM lead_activities ${whereClause}`;
+    const countRes = await queryMarketing(countQuery, countParams);
     const totalCount = parseInt(countRes.rows[0].count, 10);
 
     // 3. Recopilar IDs de leads únicos y buscar sus datos en MAIN_DB
