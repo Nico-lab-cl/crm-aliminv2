@@ -1,6 +1,6 @@
 'use client';
 
-import { Search, Bell, HelpCircle, Plus, Mail, Globe, Trash2 } from 'lucide-react';
+import { Search, Bell, HelpCircle, Plus, Globe, Trash2, Send, MailOpen, MousePointer, AlertCircle, MessageSquare } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 
 interface NotificationItem {
@@ -201,12 +201,40 @@ export default function Header() {
                         className={`px-4 py-3 flex gap-3 hover:bg-[#f5f8fa]/50 transition-colors ${!n.read ? 'bg-amber-50/10' : ''}`}
                       >
                         <div className="mt-0.5 flex-shrink-0">
-                          {n.event_type === 'EMAIL_OPENED' ? (
-                            <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
-                              <Mail className="w-3.5 h-3.5" />
+                          {n.event_type === 'EMAIL_SENT' ? (
+                            <div className="p-1.5 bg-slate-50 text-slate-500 rounded-lg" title="Enviado">
+                              <Send className="w-3.5 h-3.5" />
+                            </div>
+                          ) : n.event_type === 'EMAIL_OPENED' ? (
+                            <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg" title="Abierto">
+                              <MailOpen className="w-3.5 h-3.5" />
+                            </div>
+                          ) : n.event_type === 'EMAIL_CLICKED' ? (
+                            <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg" title="Clic en Enlace">
+                              <MousePointer className="w-3.5 h-3.5" />
+                            </div>
+                          ) : n.event_type === 'PAGE_VISIT' ? (
+                            <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg" title="Visita Web">
+                              <Globe className="w-3.5 h-3.5" />
+                            </div>
+                          ) : n.event_type === 'CLICK_BUTTON' ? (
+                            <div className="p-1.5 bg-orange-50 text-orange-600 rounded-lg" title="Clic en Botón">
+                              <MousePointer className="w-3.5 h-3.5" />
+                            </div>
+                          ) : n.event_type === 'EMAIL_BOUNCED' ? (
+                            <div className="p-1.5 bg-red-50 text-red-600 rounded-lg" title="Rebotado">
+                              <AlertCircle className="w-3.5 h-3.5" />
+                            </div>
+                          ) : n.event_type === 'EMAIL_REPLIED' ? (
+                            <div className="p-1.5 bg-purple-50 text-purple-600 rounded-lg" title="Respondido">
+                              <MessageSquare className="w-3.5 h-3.5" />
+                            </div>
+                          ) : n.event_type === 'LEAD_REGISTERED' ? (
+                            <div className="p-1.5 bg-teal-50 text-teal-600 rounded-lg" title="Nuevo Registro">
+                              <Plus className="w-3.5 h-3.5" />
                             </div>
                           ) : (
-                            <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
+                            <div className="p-1.5 bg-slate-50 text-slate-600 rounded-lg" title="Interacción">
                               <Globe className="w-3.5 h-3.5" />
                             </div>
                           )}

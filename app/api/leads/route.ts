@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { queryMain } from '@/lib/db';
+import { queryMain, queryMarketing } from '@/lib/db';
 import { MOCK_LEADS } from '@/lib/mock_db';
 import { parseDateRobust } from '@/lib/date_utils';
 
@@ -402,6 +402,19 @@ export async function POST(request: Request) {
       // Agregar temporalmente en memoria (para que el cliente lo vea en su sesión local)
       MOCK_LEADS.unshift(newLead);
 
+      // Registrar notificación de registro en modo simulación
+      try {
+        const displayName = `${firstName || ''} ${lastName || ''}`.trim() || email;
+        const titleMsg = 'Nuevo Registro / Contacto (Simulado)';
+        const messageMsg = `${displayName} se registró o actualizó sus datos en el sitio web (${project || 'General'})`;
+        await queryMarketing(`
+          INSERT INTO notifications (lead_id, email, event_type, title, message)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [null, email, 'LEAD_REGISTERED', titleMsg, messageMsg]);
+      } catch (err) {
+        console.warn('Error inserting simulated lead registration notification:', err);
+      }
+
       return NextResponse.json({
         success: true,
         message: 'Lead creado con éxito (modo simulación)',
@@ -470,6 +483,24 @@ export async function POST(request: Request) {
     `;
 
     const res = await queryMain(query, values);
+
+    // Registrar notificación de registro de lead
+    try {
+      const insertedLead = res.rows[0];
+      const leadId = insertedLead.id;
+      const first = insertedLead.FirstName || insertedLead.firstname || firstName || '';
+      const last = insertedLead.LastName || insertedLead.lastname || lastName || '';
+      const displayName = `${first} ${last}`.trim() || email;
+      const titleMsg = 'Nuevo Registro / Contacto';
+      const messageMsg = `${displayName} se registró o actualizó sus datos en el sitio web (${project || 'General'})`;
+
+      await queryMarketing(`
+        INSERT INTO notifications (lead_id, email, event_type, title, message)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [leadId, email, 'LEAD_REGISTERED', titleMsg, messageMsg]);
+    } catch (err) {
+      console.warn('Error inserting lead registration notification:', err);
+    }
 
     return NextResponse.json({
       success: true,

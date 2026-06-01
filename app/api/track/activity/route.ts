@@ -78,14 +78,27 @@ export async function POST(request: Request) {
     }
 
     const displayName = name || email || 'Un contacto';
-    const titleMsg = 'Visita a la Web';
-    const messageMsg = `${displayName} visitó la página "${page_title || 'Inicio'}" (${page_url || ''})`;
+    let titleMsg = 'Visita a la Web';
+    let messageMsg = `${displayName} visitó la página "${page_title || 'Inicio'}" (${page_url || ''})`;
+    let notifEventType = 'PAGE_VISIT';
+
+    if (event_type === 'CLICK_BUTTON') {
+      titleMsg = 'Interacción en la Web';
+      const elementName = details?.element_name || 'un elemento';
+      const category = details?.category ? ` (${details.category})` : '';
+      messageMsg = `${displayName} hizo clic en "${elementName}"${category} en la página "${page_title || 'Inicio'}"`;
+      notifEventType = 'CLICK_BUTTON';
+    } else if (event_type && event_type !== 'PAGE_VISIT') {
+      notifEventType = event_type;
+      titleMsg = `Interacción: ${event_type}`;
+      messageMsg = `${displayName} realizó una interacción de tipo "${event_type}" en la página "${page_title || 'Inicio'}"`;
+    }
 
     // Registrar la notificación
     await queryMarketing(`
       INSERT INTO notifications (lead_id, email, event_type, title, message)
       VALUES ($1, $2, $3, $4, $5)
-    `, [lead_id, email, 'PAGE_VISIT', titleMsg, messageMsg]);
+    `, [lead_id, email, notifEventType, titleMsg, messageMsg]);
 
     return new NextResponse(
       JSON.stringify({ success: true, activity_id: res.rows[0].id }),

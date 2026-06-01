@@ -243,6 +243,27 @@ export async function executeCampaign(options: SendCampaingOptions) {
         'UPDATE campaign_logs SET status = \'SENT\', sent_at = CURRENT_TIMESTAMP WHERE id = $1',
         [logId]
       );
+
+      // Registrar notificación de correo enviado
+      let displayName = emailValue;
+      try {
+        const leadRes = await queryMain('SELECT * FROM "Lead" WHERE id = $1', [lead.id]);
+        if (leadRes.rows.length > 0) {
+          const row = leadRes.rows[0];
+          const first = row.FirstName || row.firstname || row.first_name || '';
+          const last = row.LastName || row.lastname || row.last_name || '';
+          const fullName = `${first} ${last}`.trim();
+          if (fullName) displayName = `${fullName} (${emailValue})`;
+        }
+      } catch (err) {
+        console.warn('Error fetching lead details for sent notification in sending_engine:', err);
+      }
+      const titleMsg = 'Correo Enviado';
+      const messageMsg = `Se envió el correo de la campaña "${campaign.title}" a ${displayName}`;
+      await queryMarketing(`
+        INSERT INTO notifications (lead_id, email, event_type, title, message)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [lead.id, emailValue, 'EMAIL_SENT', titleMsg, messageMsg]);
     } catch (error) {
       console.error(`Error procesando lead:`, error);
     }
