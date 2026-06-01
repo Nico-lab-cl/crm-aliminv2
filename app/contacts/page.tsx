@@ -26,7 +26,9 @@ import {
   Eye,
   ExternalLink,
   Globe,
-  MousePointer
+  MousePointer,
+  Phone,
+  ArrowRight
 } from 'lucide-react';
 
 interface Lead {
@@ -445,6 +447,28 @@ export default function ContactsPage() {
     return 'bg-slate-50 text-slate-600 border-slate-200';
   };
 
+  // Pipeline de estados con configuración visual
+  const pipelineStages = [
+    { key: 'Nuevo', label: 'Nuevo', icon: Sparkles, color: 'sky', emoji: '🆕' },
+    { key: 'Contactado', label: 'Contactado', icon: Phone, color: 'amber', emoji: '📞' },
+    { key: 'Visita', label: 'Visita', icon: MapPin, color: 'emerald', emoji: '📍' },
+    { key: 'Reservado', label: 'Reservado', icon: Check, color: 'purple', emoji: '🏠' },
+  ];
+
+  // Contar leads por estado (sobre el total cargado actualmente)
+  const getStatusCount = (statusKey: string) => {
+    return leads.filter(l => {
+      const s = getLeadStatus(l).toLowerCase();
+      return s === statusKey.toLowerCase();
+    }).length;
+  };
+
+  // Determinar el índice del stage actual de un lead
+  const getStageIndex = (statusName: string) => {
+    const idx = pipelineStages.findIndex(s => s.key.toLowerCase() === statusName.toLowerCase());
+    return idx >= 0 ? idx : -1;
+  };
+
   return (
     <div className="p-8 space-y-8 max-w-[1600px] mx-auto text-[#33475b]">
       {/* Header */}
@@ -504,6 +528,59 @@ export default function ContactsPage() {
             Añadir Contacto
           </button>
         </div>
+      </div>
+
+      {/* Pipeline de Estados - Resumen Visual */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {pipelineStages.map((stage, idx) => {
+          const count = getStatusCount(stage.key);
+          const StageIcon = stage.icon;
+          const colorMap: Record<string, { bg: string; border: string; text: string; iconBg: string; bar: string }> = {
+            sky: { bg: 'bg-sky-50/80', border: 'border-sky-200', text: 'text-sky-700', iconBg: 'bg-sky-500', bar: 'bg-sky-500' },
+            amber: { bg: 'bg-amber-50/80', border: 'border-amber-200', text: 'text-amber-700', iconBg: 'bg-amber-500', bar: 'bg-amber-500' },
+            emerald: { bg: 'bg-emerald-50/80', border: 'border-emerald-200', text: 'text-emerald-700', iconBg: 'bg-emerald-500', bar: 'bg-emerald-500' },
+            purple: { bg: 'bg-purple-50/80', border: 'border-purple-200', text: 'text-purple-700', iconBg: 'bg-purple-500', bar: 'bg-purple-500' },
+          };
+          const c = colorMap[stage.color] || colorMap.sky;
+          const isActiveFilter = status === stage.key;
+          return (
+            <button
+              key={stage.key}
+              onClick={() => {
+                if (isActiveFilter) {
+                  setStatus('');
+                } else {
+                  setStatus(stage.key);
+                }
+                setPage(1);
+              }}
+              className={`relative ${c.bg} border ${c.border} rounded-2xl p-4 shadow-sm hover:shadow-md transition-all group text-left overflow-hidden ${
+                isActiveFilter ? 'ring-2 ring-offset-1 ring-current shadow-md' : ''
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className={`p-1.5 rounded-lg ${c.iconBg} text-white shadow-sm`}>
+                  <StageIcon className="w-3.5 h-3.5" />
+                </div>
+                {idx < pipelineStages.length - 1 && (
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-300 absolute right-2 top-4" />
+                )}
+              </div>
+              <p className={`text-2xl font-extrabold ${c.text}`}>{count}</p>
+              <p className="text-[11px] font-bold text-[#516f90] uppercase tracking-wider mt-0.5">{stage.label}</p>
+              {/* Barra de proporción */}
+              <div className="mt-2.5 h-1 bg-slate-200/80 rounded-full overflow-hidden">
+                <div
+                  className={`h-full ${c.bar} rounded-full transition-all duration-500`}
+                  style={{ width: leads.length > 0 ? `${(count / leads.length) * 100}%` : '0%' }}
+                />
+              </div>
+              {isActiveFilter && (
+                <span className="absolute top-2 right-2 text-[8px] font-extrabold uppercase bg-white/80 px-1.5 py-0.5 rounded border border-slate-200 text-slate-500">Filtrado</span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Filtros de Búsqueda y Segmentación */}
@@ -972,6 +1049,58 @@ export default function ContactsPage() {
               >
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Pipeline de Estado Visual - Barra de Progreso Clickable */}
+            <div className="px-6 py-3 bg-white border-b border-[#cbd6e2]/60">
+              <div className="flex items-center gap-1">
+                {pipelineStages.map((stage, idx) => {
+                  const currentStageIdx = getStageIndex(getLeadStatus(selectedLead));
+                  const isActive = stage.key.toLowerCase() === getLeadStatus(selectedLead).toLowerCase();
+                  const isPast = idx < currentStageIdx;
+                  const StageIcon = stage.icon;
+
+                  const colorMap: Record<string, { activeBg: string; activeText: string; pastBg: string; pastText: string }> = {
+                    sky: { activeBg: 'bg-sky-500', activeText: 'text-white', pastBg: 'bg-sky-100', pastText: 'text-sky-600' },
+                    amber: { activeBg: 'bg-amber-500', activeText: 'text-white', pastBg: 'bg-amber-100', pastText: 'text-amber-600' },
+                    emerald: { activeBg: 'bg-emerald-500', activeText: 'text-white', pastBg: 'bg-emerald-100', pastText: 'text-emerald-600' },
+                    purple: { activeBg: 'bg-purple-500', activeText: 'text-white', pastBg: 'bg-purple-100', pastText: 'text-purple-600' },
+                  };
+                  const c = colorMap[stage.color] || colorMap.sky;
+
+                  return (
+                    <div key={stage.key} className="flex items-center flex-1 gap-1">
+                      <button
+                        onClick={() => handleUpdateLead(selectedLead.id, { status: stage.key })}
+                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                          isActive
+                            ? `${c.activeBg} ${c.activeText} border-transparent shadow-md scale-[1.02]`
+                            : isPast
+                            ? `${c.pastBg} ${c.pastText} border-transparent hover:shadow-sm`
+                            : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200 hover:text-slate-600'
+                        }`}
+                        title={`Cambiar estado a ${stage.label}`}
+                      >
+                        {isPast ? (
+                          <Check className="w-3.5 h-3.5" />
+                        ) : (
+                          <StageIcon className="w-3.5 h-3.5" />
+                        )}
+                        <span className="hidden sm:inline">{stage.label}</span>
+                        <span className="sm:hidden">{stage.emoji}</span>
+                      </button>
+                      {idx < pipelineStages.length - 1 && (
+                        <ArrowRight className={`w-3 h-3 shrink-0 ${
+                          idx < currentStageIdx ? 'text-slate-400' : 'text-slate-300'
+                        }`} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-[#516f90] mt-1.5 text-center font-medium">
+                Haz clic en cualquier etapa para actualizar el estado del contacto
+              </p>
             </div>
             
             {/* Cuerpo del Panel (3 Columnas) */}
