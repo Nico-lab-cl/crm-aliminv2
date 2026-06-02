@@ -31,8 +31,55 @@ export function optimizeHtmlForDarkMode(html: string): string {
         min-width: 100% !important;
       }
 
+      /* --- CAPA DE SEGURIDAD GMAIL (FUERA DE MEDIA QUERIES) --- */
+      /* Fuerza texto blanco por defecto para elementos de texto en Gmail */
+      u + .body td, 
+      u + .body p, 
+      u + .body span, 
+      u + .body a, 
+      u + .body div, 
+      u + .body h1, 
+      u + .body h2, 
+      u + .body h3, 
+      u + .body h4,
+      u + .body strong,
+      u + .body em,
+      u + .body font {
+        color: #ffffff !important;
+      }
+
+      /* Preservar colores específicos del diseño (como los amarillos/dorados y azul de Alimin) */
+      u + .body [style*="color:#f7b500"] { color: #f7b500 !important; }
+      u + .body [style*="color: #f7b500"] { color: #f7b500 !important; }
+      u + .body [style*="color:#ffcc00"] { color: #ffcc00 !important; }
+      u + .body [style*="color: #ffcc00"] { color: #ffcc00 !important; }
+      u + .body [style*="color:#2bbaef"] { color: #2bbaef !important; }
+      u + .body [style*="color: #2bbaef"] { color: #2bbaef !important; }
+      u + .body [style*="color:#cccccc"] { color: #cccccc !important; }
+      u + .body [style*="color: #cccccc"] { color: #cccccc !important; }
+      u + .body [style*="color:#eeeeee"] { color: #eeeeee !important; }
+      u + .body [style*="color: #eeeeee"] { color: #eeeeee !important; }
+
+      /* Preservar fondos específicos (como el azul del botón y el fondo marino) */
+      u + .body [style*="background-color:#060b2b"] {
+        background-color: #060b2b !important;
+        background-image: linear-gradient(#060b2b, #060b2b) !important;
+      }
+      u + .body [style*="background-color: #060b2b"] {
+        background-color: #060b2b !important;
+        background-image: linear-gradient(#060b2b, #060b2b) !important;
+      }
+      u + .body [style*="background-color:#2bbaef"] {
+        background-color: #2bbaef !important;
+        background-image: linear-gradient(#2bbaef, #2bbaef) !important;
+      }
+      u + .body [style*="background-color: #2bbaef"] {
+        background-color: #2bbaef !important;
+        background-image: linear-gradient(#2bbaef, #2bbaef) !important;
+      }
+
+      /* --- COMPATIBILIDAD CON APPLE MAIL (DENTRO DE MEDIA QUERIES) --- */
       @media (prefers-color-scheme: dark) {
-        /* Fuerza a que los clientes que respetan prefers-color-scheme mantengan el diseño */
         .dm-keep-dark {
           background-color: #060b2b !important;
           background-image: linear-gradient(#060b2b, #060b2b) !important;
@@ -41,7 +88,7 @@ export function optimizeHtmlForDarkMode(html: string): string {
           color: #ffffff !important;
         }
 
-        /* Selectores específicos para sobreescribir inline-styles de color de texto claro en Apple Mail */
+        /* Fuerza colores originales en Apple Mail */
         [style*="color:#ffffff"] { color: #ffffff !important; }
         [style*="color: #ffffff"] { color: #ffffff !important; }
         [style*="color:#fff"] { color: #ffffff !important; }
@@ -53,7 +100,6 @@ export function optimizeHtmlForDarkMode(html: string): string {
         [style*="color: rgb(255, 255, 255)"] { color: #ffffff !important; }
         [style*="color: rgb(255,255,255)"] { color: #ffffff !important; }
         
-        /* Colores crema/plomizos/amarillos de la marca Alimin */
         [style*="color:#f7b500"] { color: #f7b500 !important; }
         [style*="color: #f7b500"] { color: #f7b500 !important; }
         [style*="color:#ffcc00"] { color: #ffcc00 !important; }
