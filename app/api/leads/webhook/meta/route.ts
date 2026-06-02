@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { queryMarketing, queryMain } from '@/lib/db';
+import { optimizeHtmlForDarkMode } from '@/lib/email_utils';
 
 export async function POST(request: Request) {
   try {
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
         if (!n8nUrl) return;
 
         const trackingPixel = `<img src="${appUrl}/api/track/open?log_id=${logId}" width="1" height="1" style="display:none;" />`;
-        const finalHtml = campaign.html_content + trackingPixel;
+        const finalHtml = optimizeHtmlForDarkMode(campaign.html_content + trackingPixel);
 
         await fetch(n8nUrl, {
           method: 'POST',

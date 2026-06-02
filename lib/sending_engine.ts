@@ -1,5 +1,6 @@
 import { queryMain, queryMarketing } from '@/lib/db';
 import { parseDateRobust } from '@/lib/date_utils';
+import { optimizeHtmlForDarkMode } from '@/lib/email_utils';
 
 interface SendCampaingOptions {
   campaignId: string;
@@ -223,7 +224,7 @@ export async function executeCampaign(options: SendCampaingOptions) {
 
       const trackingPixel = `<img src="${appUrl}/api/track/open?log_id=${logId}" width="1" height="1" style="display:none;" />`;
       const htmlWithTrackedLinks = rewriteHtmlLinks(campaign.html_content, logId, appUrl);
-      const finalHtml = htmlWithTrackedLinks + trackingPixel;
+      const finalHtml = optimizeHtmlForDarkMode(htmlWithTrackedLinks + trackingPixel);
 
       fetch(n8nUrl, {
         method: 'POST',
@@ -313,7 +314,7 @@ export async function sendTestCampaign(campaignId: string, targetEmail: string) 
 
   const trackingPixel = `<img src="${appUrl}/api/track/open?log_id=${logId}" width="1" height="1" style="display:none;" />`;
   const htmlWithTrackedLinks = rewriteHtmlLinks(campaign.html_content, logId, appUrl);
-  const finalHtml = htmlWithTrackedLinks + trackingPixel;
+  const finalHtml = optimizeHtmlForDarkMode(htmlWithTrackedLinks + trackingPixel);
 
   await fetch(n8nUrl, {
     method: 'POST',
