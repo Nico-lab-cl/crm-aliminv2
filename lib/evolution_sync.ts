@@ -380,6 +380,10 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
     }
 
     console.log(`Sincronización completada. Se insertaron ${insertedCount} mensajes en la base de datos local.`);
+    
+    // Ejecutar vinculación retroactiva para enlazar chats huérfanos con nuevos contactos creados
+    await retroactiveLinkLeads();
+
     return { syncedCount: insertedCount };
 
   } catch (error) {
@@ -389,6 +393,67 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
     client.release();
   }
 }
+
+/**
+ * Vincula retroactivamente los mensajes de WhatsApp que no tienen lead_id asignado (huérfanos).
+ * Esto resuelve el caso de clientes nuevos que envían mensajes y posteriormente
+ * se registran en el CRM mediante formularios u otros medios.
+ */
+export async function retroactiveLinkLeads() {
+  try {
+    // 1. Obtener todos los JIDs de mensajes que no tienen lead_id asignado
+    const orphanJidsRes = await queryMarketing(`
+      SELECT DISTINCT remote_jid 
+      FROM whatsapp_messages 
+      WHERE lead_id IS NULL
+    `);
+
+    if (orphanJidsRes.rows.length === 0) {
+      return;
+    }
+
+    console.log(`[WhatsApp Sync] Se encontraron ${orphanJidsRes.rows.length} números de chat sin contacto asignado. Buscando coincidencias en el CRM...`);
+
+    let linkedCount = 0;
+
+    for (const row of orphanJidsRes.rows) {
+      const remoteJid = row.remote_jid;
+      const phoneDigits = remoteJid.split('@')[0].replace(/\D/g, '');
+
+      if (phoneDigits) {
+        // Buscar un lead con este teléfono limpio en la DB principal
+        const matchRes = await queryMain(`
+          SELECT id FROM "Lead" 
+          WHERE "Phone" IS NOT NULL AND (
+            REGEXP_REPLACE("Phone", '[^0-9]', '', 'g') = $1
+            OR $1 LIKE '%' || REGEXP_REPLACE("Phone", '[^0-9]', '', 'g')
+          )
+          LIMIT 1
+        `, [phoneDigits]);
+
+        if (matchRes.rows.length > 0) {
+          const leadId = matchRes.rows[0].id;
+          
+          // Vincular los mensajes huérfanos de este JID al lead encontrado
+          await queryMarketing(`
+            UPDATE whatsapp_messages 
+            SET lead_id = $1 
+            WHERE remote_jid = $2 AND lead_id IS NULL
+          `, [leadId, remoteJid]);
+          
+          linkedCount++;
+        }
+      }
+    }
+
+    if (linkedCount > 0) {
+      console.log(`[WhatsApp Sync] Vinculación retroactiva exitosa. Se enlazaron chats de ${linkedCount} contactos nuevos.`);
+    }
+  } catch (error) {
+    console.error('Error durante la vinculación retroactiva de leads de WhatsApp:', error);
+  }
+}
+
 
 /**
  * Función auxiliar para verificar si una columna es de tipo bigint (numérica).

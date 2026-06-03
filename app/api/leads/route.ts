@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { queryMain, queryMarketing } from '@/lib/db';
 import { MOCK_LEADS } from '@/lib/mock_db';
 import { parseDateRobust } from '@/lib/date_utils';
+import { retroactiveLinkLeads } from '@/lib/evolution_sync';
 
 export const dynamic = 'force-dynamic';
 
@@ -500,6 +501,13 @@ export async function POST(request: Request) {
       `, [leadId, email, 'LEAD_REGISTERED', titleMsg, messageMsg]);
     } catch (err) {
       console.warn('Error inserting lead registration notification:', err);
+    }
+
+    // Vincular mensajes huérfanos que coincidan con este nuevo lead
+    try {
+      await retroactiveLinkLeads();
+    } catch (e) {
+      console.warn('Error linking orphan WhatsApp messages to newly created lead:', e);
     }
 
     return NextResponse.json({

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { queryMain } from '@/lib/db';
 import { MOCK_LEADS } from '@/lib/mock_db';
+import { retroactiveLinkLeads } from '@/lib/evolution_sync';
 
 export async function PATCH(
   request: Request,
@@ -108,6 +109,13 @@ export async function PATCH(
     const res = await queryMain(query, values);
     if (res.rowCount === 0) {
       return NextResponse.json({ message: 'Contacto no encontrado en la base de datos.' }, { status: 404 });
+    }
+
+    // Vincular mensajes huérfanos que coincidan si el teléfono fue actualizado
+    try {
+      await retroactiveLinkLeads();
+    } catch (e) {
+      console.warn('Error linking orphan WhatsApp messages on lead update:', e);
     }
 
     return NextResponse.json({
