@@ -348,9 +348,9 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
         // O si el número de WhatsApp contiene el teléfono limpio.
         const matchRes = await queryMain(`
           SELECT id FROM "Lead" 
-          WHERE "Phone" IS NOT NULL AND (
-            REGEXP_REPLACE("Phone", '[^0-9]', '', 'g') = $1
-            OR $1 LIKE '%' || REGEXP_REPLACE("Phone", '[^0-9]', '', 'g')
+          WHERE "phone" IS NOT NULL AND (
+            REGEXP_REPLACE("phone", '[^0-9]', '', 'g') = $1
+            OR $1 LIKE '%' || REGEXP_REPLACE("phone", '[^0-9]', '', 'g')
           )
           LIMIT 1
         `, [phoneDigits]);
@@ -433,9 +433,9 @@ export async function retroactiveLinkLeads() {
         // Buscar un lead con este teléfono limpio en la DB principal
         const matchRes = await queryMain(`
           SELECT id FROM "Lead" 
-          WHERE "Phone" IS NOT NULL AND (
-            REGEXP_REPLACE("Phone", '[^0-9]', '', 'g') = $1
-            OR $1 LIKE '%' || REGEXP_REPLACE("Phone", '[^0-9]', '', 'g')
+          WHERE "phone" IS NOT NULL AND (
+            REGEXP_REPLACE("phone", '[^0-9]', '', 'g') = $1
+            OR $1 LIKE '%' || REGEXP_REPLACE("phone", '[^0-9]', '', 'g')
           )
           LIMIT 1
         `, [phoneDigits]);

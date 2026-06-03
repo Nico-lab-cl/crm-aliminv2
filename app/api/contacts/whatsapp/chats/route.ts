@@ -75,16 +75,17 @@ export async function GET() {
       if (chat.lead_id) {
         try {
           const leadRes = await queryMain(`
-            SELECT "FirstName", "LastName", "Email" 
+            SELECT * 
             FROM "Lead" 
             WHERE id = $1
           `, [chat.lead_id]);
 
           if (leadRes.rows.length > 0) {
-            const first = leadRes.rows[0].FirstName || leadRes.rows[0].firstname || '';
-            const last = leadRes.rows[0].LastName || leadRes.rows[0].lastname || '';
+            const row = leadRes.rows[0];
+            const first = row.firstName || row.FirstName || row.firstname || '';
+            const last = row.lastName || row.LastName || row.lastname || '';
             leadName = `${first} ${last}`.trim();
-            email = leadRes.rows[0].Email || leadRes.rows[0].email || null;
+            email = row.email || row.Email || null;
           }
         } catch (e) {
           console.warn(`Error al consultar datos de Lead para ID ${chat.lead_id}:`, (e as Error).message);
