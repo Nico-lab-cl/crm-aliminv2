@@ -57,6 +57,13 @@ interface EvolutionSchemaMeta {
   instanceCol: string;
 }
 
+function escapeIdentifier(name: string): string {
+  if (name.includes('->') || name.includes('(') || name.includes('::')) {
+    return name;
+  }
+  return `"${name}"`;
+}
+
 /**
  * Descubre el esquema de la tabla de mensajes en la base de datos de Evolution API.
  * Esto hace al motor auto-adaptable a diferentes versiones de Evolution API.
@@ -87,10 +94,12 @@ async function introspectEvolutionSchema(pool: Pool): Promise<EvolutionSchemaMet
     
     const cols = colsRes.rows.map(r => r.column_name);
 
-    // 3. Mapear columnas según presencia
-    const idCol = cols.find(c => ['id', 'keyId', 'keyid', 'messageId', 'messageid'].includes(c)) || 'id';
-    const jidCol = cols.find(c => ['remoteJid', 'remote_jid', 'jid', 'remotejid'].includes(c)) || 'remoteJid';
-    const fromMeCol = cols.find(c => ['fromMe', 'from_me', 'fromme'].includes(c)) || 'fromMe';
+    // 3. Mapear columnas según presencia. En Evolution API v2, se usa un JSONB "key" para id, remoteJid y fromMe.
+    const hasKeyCol = cols.includes('key');
+
+    const idCol = hasKeyCol ? `"key"->>'id'` : (cols.find(c => ['id', 'keyId', 'keyid', 'messageId', 'messageid'].includes(c)) || 'id');
+    const jidCol = hasKeyCol ? `"key"->>'remoteJid'` : (cols.find(c => ['remoteJid', 'remote_jid', 'jid', 'remotejid'].includes(c)) || 'remoteJid');
+    const fromMeCol = hasKeyCol ? `("key"->>'fromMe')::boolean` : (cols.find(c => ['fromMe', 'from_me', 'fromme'].includes(c)) || 'fromMe');
     const contentCol = cols.find(c => ['message', 'content', 'body', 'text'].includes(c)) || 'message';
     const timestampCol = cols.find(c => ['messageTimestamp', 'timestamp', 'createdAt', 'created_at', 'messagetimestamp'].includes(c)) || 'messageTimestamp';
     const instanceCol = cols.find(c => ['instanceId', 'instance_id', 'instanceid'].includes(c)) || 'instanceId';
@@ -284,7 +293,7 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
 
     if (jid) {
       queryParams.push(jid);
-      selectClauses.push(`"${schema.jidCol}" = $${queryParams.length}`);
+      selectClauses.push(`${escapeIdentifier(schema.jidCol)} = $${queryParams.length}`);
     }
 
     if (sinceTimestamp) {
@@ -294,9 +303,9 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
       if (isBigIntType) {
         const secs = Math.floor(sinceTimestamp.getTime() / 1000);
         queryParams[queryParams.length - 1] = secs;
-        selectClauses.push(`"${schema.timestampCol}" > $${queryParams.length}`);
+        selectClauses.push(`${escapeIdentifier(schema.timestampCol)} > $${queryParams.length}`);
       } else {
-        selectClauses.push(`"${schema.timestampCol}" > $${queryParams.length}`);
+        selectClauses.push(`${escapeIdentifier(schema.timestampCol)} > $${queryParams.length}`);
       }
     }
 
@@ -304,15 +313,15 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
     const limit = jid ? 500 : 2000;
     const queryText = `
       SELECT 
-        "${schema.idCol}" as id,
-        "${schema.jidCol}" as remote_jid,
-        "${schema.fromMeCol}" as from_me,
-        "${schema.contentCol}" as content,
-        "${schema.timestampCol}" as raw_timestamp,
-        "${schema.instanceCol}" as instance_id
+        ${escapeIdentifier(schema.idCol)} as id,
+        ${escapeIdentifier(schema.jidCol)} as remote_jid,
+        ${escapeIdentifier(schema.fromMeCol)} as from_me,
+        ${escapeIdentifier(schema.contentCol)} as content,
+        ${escapeIdentifier(schema.timestampCol)} as raw_timestamp,
+        ${escapeIdentifier(schema.instanceCol)} as instance_id
       FROM "${schema.tableName}"
       WHERE ${selectClauses.join(' AND ')}
-      ORDER BY "${schema.timestampCol}" ASC
+      ORDER BY ${escapeIdentifier(schema.timestampCol)} ASC
       LIMIT ${limit}
     `;
 
