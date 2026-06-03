@@ -114,12 +114,51 @@ export async function GET() {
         const count = await client.query(`SELECT COUNT(*) FROM "${msgTable.table_name}"`);
         report.evolutionDb.message_count = parseInt(count.rows[0].count);
         
-        // Fetch 5 sample messages to inspect key and message JSON
+        // Fetch 5 sample messages
         if (report.evolutionDb.message_count > 0) {
           const sample = await client.query(`SELECT * FROM "${msgTable.table_name}" LIMIT 5`);
           report.evolutionDb.sample_messages = sample.rows;
         }
       }
+
+      // Check Contact table columns and samples
+      const contactTable = tables.rows.find(r => r.table_name.toLowerCase() === 'contact');
+      if (contactTable) {
+        const columns = await client.query(`
+          SELECT column_name, data_type 
+          FROM information_schema.columns 
+          WHERE table_name = $1 AND table_schema = 'public'
+        `, [contactTable.table_name]);
+        report.evolutionDb.contact_columns = columns.rows;
+
+        const count = await client.query(`SELECT COUNT(*) FROM "${contactTable.table_name}"`);
+        report.evolutionDb.contact_count = parseInt(count.rows[0].count);
+
+        if (report.evolutionDb.contact_count > 0) {
+          const sample = await client.query(`SELECT * FROM "${contactTable.table_name}" LIMIT 10`);
+          report.evolutionDb.sample_contacts = sample.rows;
+        }
+      }
+
+      // Check Chat table columns and samples
+      const chatTable = tables.rows.find(r => r.table_name.toLowerCase() === 'chat');
+      if (chatTable) {
+        const columns = await client.query(`
+          SELECT column_name, data_type 
+          FROM information_schema.columns 
+          WHERE table_name = $1 AND table_schema = 'public'
+        `, [chatTable.table_name]);
+        report.evolutionDb.chat_columns = columns.rows;
+
+        const count = await client.query(`SELECT COUNT(*) FROM "${chatTable.table_name}"`);
+        report.evolutionDb.chat_count = parseInt(count.rows[0].count);
+
+        if (report.evolutionDb.chat_count > 0) {
+          const sample = await client.query(`SELECT * FROM "${chatTable.table_name}" LIMIT 10`);
+          report.evolutionDb.sample_chats = sample.rows;
+        }
+      }
+
     } finally {
       client.release();
     }
