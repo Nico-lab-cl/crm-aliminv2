@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     // 2. Intentar sincronizar de forma incremental para este JID específico
     try {
       console.log(`[WhatsApp API Messages] Sincronizando por demanda para JID: ${jid}...`);
-      await syncEvolutionChats(jid, 720); // Buscar últimos 30 días
+      await syncEvolutionChats(jid, 4320); // Buscar últimos 180 días
     } catch (e) {
       console.warn(`[WhatsApp API Messages] Falló la sincronización en segundo plano para ${jid}:`, (e as Error).message);
     }

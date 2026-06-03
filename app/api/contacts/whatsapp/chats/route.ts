@@ -32,8 +32,16 @@ export async function GET() {
     // 2. Intentar ejecutar una sincronización masiva rápida e incremental
     // antes de listar para asegurarnos de capturar chats nuevos en la bandeja de entrada
     try {
-      console.log('[WhatsApp API Chats] Sincronizando chats incrementalmente...');
-      await syncEvolutionChats(undefined, 24); // Sincroniza las últimas 24 horas en segundo plano
+      const countRes = await queryMarketing('SELECT COUNT(*) FROM whatsapp_messages');
+      const localCount = parseInt(countRes.rows[0].count || '0');
+
+      if (localCount === 0) {
+        console.log('[WhatsApp API Chats] Tabla local vacía. Realizando sincronización inicial de los últimos 180 días...');
+        await syncEvolutionChats(undefined, 4320); // 180 días (6 meses)
+      } else {
+        console.log('[WhatsApp API Chats] Sincronizando chats incrementalmente...');
+        await syncEvolutionChats(undefined, 24); // Sincroniza las últimas 24 horas en segundo plano
+      }
     } catch (e) {
       console.warn('[WhatsApp API Chats] Error en la sincronización en segundo plano de Evolution API, mostrando datos offline:', (e as Error).message);
     }
