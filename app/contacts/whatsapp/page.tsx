@@ -69,6 +69,12 @@ export default function WhatsAppInboxPage() {
   const [messagesSearch, setMessagesSearch] = useState('');
   const [syncingChat, setSyncingChat] = useState(false);
 
+  // Filtros
+  const [selectedAdvisor, setSelectedAdvisor] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
   // Modales
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
@@ -279,10 +285,42 @@ export default function WhatsAppInboxPage() {
     }
   };
 
+  // Obtener lista única de asesores presentes en los chats
+  const advisorsList = Array.from(new Set(chats.map(c => c.advisor_name).filter(Boolean)));
+
   // Filtrar conversaciones de la izquierda
   const filteredChats = chats.filter(c => {
+    // 1. Buscador por texto
     const q = chatsSearch.toLowerCase();
-    return c.lead_name.toLowerCase().includes(q) || c.phone.includes(q) || (c.body && c.body.toLowerCase().includes(q));
+    const matchesSearch = c.lead_name.toLowerCase().includes(q) || c.phone.includes(q) || (c.body && c.body.toLowerCase().includes(q));
+    
+    // 2. Filtro por asesor
+    const matchesAdvisor = !selectedAdvisor || c.advisor_name === selectedAdvisor;
+    
+    // 3. Filtro por estado
+    const matchesStatus = !selectedStatus 
+      ? true 
+      : selectedStatus === 'linked' 
+        ? c.is_crm_contact 
+        : !c.is_crm_contact;
+        
+    // 4. Filtro por fecha
+    let matchesDate = true;
+    if (startDate || endDate) {
+      const chatDate = new Date(c.timestamp);
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0,0,0,0);
+        if (chatDate < start) matchesDate = false;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23,59,59,999);
+        if (chatDate > end) matchesDate = false;
+      }
+    }
+    
+    return matchesSearch && matchesAdvisor && matchesStatus && matchesDate;
   });
 
   // Filtrar mensajes del chat activo
@@ -313,6 +351,78 @@ export default function WhatsAppInboxPage() {
           <RefreshCcw className="w-4 h-4" />
           Recargar Bandeja
         </button>
+      </div>
+      
+      {/* Barra de Filtros */}
+      <div className="bg-white border border-[#cbd6e2] rounded-2xl p-4 shadow-sm flex flex-wrap gap-4 items-center justify-between">
+        <div className="flex flex-wrap gap-4 items-center">
+          {/* Asesor */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-[#516f90] uppercase tracking-wide">Asesor</span>
+            <select
+              value={selectedAdvisor}
+              onChange={(e) => setSelectedAdvisor(e.target.value)}
+              className="bg-[#f5f8fa] border border-[#cbd6e2] rounded-xl px-3 py-2 text-xs font-semibold text-[#33475b] focus:ring-2 focus:ring-[#2d544c]/20 outline-none min-w-[160px]"
+            >
+              <option value="">Todos los Asesores</option>
+              {advisorsList.map(adv => (
+                <option key={adv} value={adv}>{adv}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Estado CRM */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-[#516f90] uppercase tracking-wide">Estado CRM</span>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="bg-[#f5f8fa] border border-[#cbd6e2] rounded-xl px-3 py-2 text-xs font-semibold text-[#33475b] focus:ring-2 focus:ring-[#2d544c]/20 outline-none min-w-[160px]"
+            >
+              <option value="">Todos los Estados</option>
+              <option value="linked">Sincronizados (CRM)</option>
+              <option value="unlinked">No Sincronizados (Desconocidos)</option>
+            </select>
+          </div>
+
+          {/* Fecha Desde */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-[#516f90] uppercase tracking-wide">Fecha Desde</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="bg-[#f5f8fa] border border-[#cbd6e2] rounded-xl px-3 py-2 text-xs font-semibold text-[#33475b] focus:ring-2 focus:ring-[#2d544c]/20 outline-none"
+            />
+          </div>
+
+          {/* Fecha Hasta */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-[#516f90] uppercase tracking-wide">Fecha Hasta</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="bg-[#f5f8fa] border border-[#cbd6e2] rounded-xl px-3 py-2 text-xs font-semibold text-[#33475b] focus:ring-2 focus:ring-[#2d544c]/20 outline-none"
+            />
+          </div>
+        </div>
+
+        {/* Botón Limpiar */}
+        {(selectedAdvisor || selectedStatus || startDate || endDate) && (
+          <button
+            onClick={() => {
+              setSelectedAdvisor('');
+              setSelectedStatus('');
+              setStartDate('');
+              setEndDate('');
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-[#f5f8fa] hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all shadow-sm border border-[#cbd6e2] mt-4 sm:mt-0"
+          >
+            <X className="w-3.5 h-3.5" />
+            Limpiar Filtros
+          </button>
+        )}
       </div>
 
       {/* Grid Principal */}

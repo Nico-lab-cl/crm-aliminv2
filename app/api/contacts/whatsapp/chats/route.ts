@@ -57,7 +57,8 @@ export async function GET() {
         body,
         timestamp,
         instance_id,
-        advisor_name
+        advisor_name,
+        push_name
       FROM whatsapp_messages
       ORDER BY remote_jid, timestamp DESC
     `;
@@ -70,6 +71,7 @@ export async function GET() {
     for (const chat of rawChats) {
       let leadName = null;
       let email = null;
+      let leadPhone = null;
       const phone = chat.remote_jid.split('@')[0].replace(/\D/g, '');
 
       if (chat.lead_id) {
@@ -86,19 +88,22 @@ export async function GET() {
             const last = row.lastName || row.LastName || row.lastname || '';
             leadName = `${first} ${last}`.trim();
             email = row.email || row.Email || null;
+            leadPhone = row.phone || row.Phone || null;
           }
         } catch (e) {
           console.warn(`Error al consultar datos de Lead para ID ${chat.lead_id}:`, (e as Error).message);
         }
       }
 
+      const displayPhone = leadPhone ? leadPhone.replace(/\D/g, '') : phone;
+
       chatsList.push({
         id: chat.id,
         message_id: chat.message_id,
         lead_id: chat.lead_id,
         remote_jid: chat.remote_jid,
-        phone,
-        lead_name: leadName || `+${phone}`,
+        phone: displayPhone,
+        lead_name: leadName || chat.push_name || `+${phone}`,
         email,
         body: chat.body,
         timestamp: chat.timestamp,

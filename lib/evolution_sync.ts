@@ -33,9 +33,15 @@ export async function initWhatsappTable() {
           timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
           instance_id VARCHAR(255),
           advisor_name VARCHAR(255),
+          push_name VARCHAR(255),
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    try {
+      await queryMarketing(`ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS push_name VARCHAR(255)`);
+    } catch (e) {
+      console.warn('Error adding push_name column to whatsapp_messages:', e);
+    }
     await queryMarketing(`CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_lead_id ON whatsapp_messages(lead_id)`);
     await queryMarketing(`CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_timestamp ON whatsapp_messages(timestamp)`);
     console.log('✓ Tabla whatsapp_messages verificada/creada correctamente en la base de datos de Marketing.');
@@ -55,6 +61,7 @@ interface EvolutionSchemaMeta {
   contentCol: string;
   timestampCol: string;
   instanceCol: string;
+  pushNameCol: string | null;
 }
 
 function escapeIdentifier(name: string): string {
@@ -103,6 +110,7 @@ async function introspectEvolutionSchema(pool: Pool): Promise<EvolutionSchemaMet
     const contentCol = cols.find(c => ['message', 'content', 'body', 'text'].includes(c)) || 'message';
     const timestampCol = cols.find(c => ['messageTimestamp', 'timestamp', 'createdAt', 'created_at', 'messagetimestamp'].includes(c)) || 'messageTimestamp';
     const instanceCol = cols.find(c => ['instanceId', 'instance_id', 'instanceid'].includes(c)) || 'instanceId';
+    const pushNameCol = cols.find(c => ['pushName', 'pushname', 'push_name'].includes(c)) || null;
 
     return {
       tableName,
@@ -111,7 +119,8 @@ async function introspectEvolutionSchema(pool: Pool): Promise<EvolutionSchemaMet
       fromMeCol,
       contentCol,
       timestampCol,
-      instanceCol
+      instanceCol,
+      pushNameCol
     };
   } finally {
     client.release();
@@ -318,7 +327,8 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
         ${escapeIdentifier(schema.fromMeCol)} as from_me,
         ${escapeIdentifier(schema.contentCol)} as content,
         ${escapeIdentifier(schema.timestampCol)} as raw_timestamp,
-        ${escapeIdentifier(schema.instanceCol)} as instance_id
+        ${escapeIdentifier(schema.instanceCol)} as instance_id,
+        ${schema.pushNameCol ? escapeIdentifier(schema.pushNameCol) : 'NULL'} as push_name
       FROM "${schema.tableName}"
       WHERE ${selectClauses.join(' AND ')}
       ORDER BY ${escapeIdentifier(schema.timestampCol)} ASC
@@ -377,11 +387,11 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
       try {
         await queryMarketing(`
           INSERT INTO whatsapp_messages 
-            (message_id, lead_id, remote_jid, from_me, body, timestamp, instance_id, advisor_name)
+            (message_id, lead_id, remote_jid, from_me, body, timestamp, instance_id, advisor_name, push_name)
           VALUES 
-            ($1, $2, $3, $4, $5, $6, $7, $8)
-          ON CONFLICT (message_id) DO NOTHING
-        `, [messageId, leadId, row.remote_jid, fromMe, body, timestamp, instanceId, advisorName]);
+            ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          ON CONFLICT (message_id) DO UPDATE SET push_name = EXCLUDED.push_name
+        `, [messageId, leadId, row.remote_jid, fromMe, body, timestamp, instanceId, advisorName, row.push_name]);
         insertedCount++;
       } catch (err) {
         console.error(`Error al insertar mensaje ${messageId}:`, err);
