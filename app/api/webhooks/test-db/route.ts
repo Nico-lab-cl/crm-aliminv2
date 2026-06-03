@@ -1,11 +1,32 @@
 import { NextResponse } from 'next/server';
 import { queryMarketing, queryMain } from '@/lib/db';
 import { Pool } from 'pg';
+import fs from 'fs';
+import path from 'path';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const report: any = {};
+
+  // 0. Test server code version
+  try {
+    const filePath = path.join(process.cwd(), 'lib/evolution_sync.ts');
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      report.serverCode = {
+        path: filePath,
+        lines: content.split('\n').length,
+        phoneLine351: content.split('\n')[350] || 'out-of-bounds',
+        phoneLine352: content.split('\n')[351] || 'out-of-bounds',
+        phoneLine353: content.split('\n')[352] || 'out-of-bounds',
+      };
+    } else {
+      report.serverCode = { exists: false, cwd: process.cwd() };
+    }
+  } catch (e: any) {
+    report.serverCode = { error: e.message };
+  }
   
   // 1. Test CRM Main DB
   try {
