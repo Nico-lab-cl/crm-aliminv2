@@ -105,9 +105,25 @@ export default function ContactsPage() {
 
   // Estado para la vista de detalle estilo HubSpot
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [activeTab, setActiveTab] = useState<'notes' | 'activity'>('notes');
+  const [activeTab, setActiveTab] = useState<'notes' | 'activity' | 'whatsapp'>('notes');
   const [newNote, setNewNote] = useState('');
   const [isUpdatingField, setIsUpdatingField] = useState(false);
+
+  // Estados WhatsApp
+  const [whatsappMessages, setWhatsappMessages] = useState<Array<{
+    id: number;
+    message_id: string;
+    lead_id: string | null;
+    remote_jid: string;
+    from_me: boolean;
+    body: string;
+    timestamp: string;
+    instance_id?: string;
+    advisor_name?: string;
+  }>>([]);
+  const [loadingWhatsapp, setLoadingWhatsapp] = useState(false);
+  const [whatsappSearch, setWhatsappSearch] = useState('');
+  const [syncingWhatsapp, setSyncingWhatsapp] = useState(false);
 
   // Actividades del Lead
   const [activities, setActivities] = useState<TimelineEvent[]>([]);
@@ -133,6 +149,43 @@ export default function ContactsPage() {
       setLoadingActivities(false);
     }
   }, []);
+
+  const fetchWhatsappMessages = useCallback(async (leadId: string) => {
+    setLoadingWhatsapp(true);
+    try {
+      const res = await fetch(`/api/leads/${leadId}/whatsapp`);
+      if (res.ok) {
+        const data = await res.json();
+        setWhatsappMessages(data.messages || []);
+      }
+    } catch (e) {
+      console.error('Error fetching WhatsApp messages:', e);
+    } finally {
+      setLoadingWhatsapp(false);
+    }
+  }, []);
+
+  const handleSyncWhatsapp = async () => {
+    if (!selectedLead) return;
+    setSyncingWhatsapp(true);
+    try {
+      const res = await fetch(`/api/leads/${selectedLead.id}/whatsapp`);
+      if (res.ok) {
+        const data = await res.json();
+        setWhatsappMessages(data.messages || []);
+      }
+    } catch (e) {
+      console.error('Error syncing WhatsApp:', e);
+    } finally {
+      setSyncingWhatsapp(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedLead && activeTab === 'whatsapp') {
+      fetchWhatsappMessages(selectedLead.id);
+    }
+  }, [selectedLead, activeTab, fetchWhatsappMessages]);
 
   // Limpiar filtros al cambiar de contacto
   useEffect(() => {
@@ -1230,6 +1283,12 @@ export default function ContactsPage() {
                       Notas & Historial
                     </button>
                     <button 
+                      onClick={() => setActiveTab('whatsapp')}
+                      className={`text-sm font-bold pb-2 transition-all border-b-2 ${activeTab === 'whatsapp' ? 'border-[#2d544c] text-[#2d544c]' : 'border-transparent text-[#516f90]'}`}
+                    >
+                      Chat de WhatsApp 💬
+                    </button>
+                    <button 
                       onClick={() => setActiveTab('activity')}
                       className={`text-sm font-bold pb-2 transition-all border-b-2 ${activeTab === 'activity' ? 'border-[#2d544c] text-[#2d544c]' : 'border-transparent text-[#516f90]'}`}
                     >
@@ -1378,6 +1437,88 @@ export default function ContactsPage() {
                           )}
                         </div>
                       </div>
+                    </>
+                  ) : activeTab === 'whatsapp' ? (
+                    <>
+                      {/* Buscador e info de sincronización */}
+                      <div className="flex items-center gap-3 bg-white border border-[#cbd6e2] rounded-xl p-3 shadow-sm mb-2">
+                        <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#516f90]" />
+                          <input 
+                            type="text" 
+                            placeholder="Buscar en la conversación..."
+                            value={whatsappSearch}
+                            onChange={(e) => setWhatsappSearch(e.target.value)}
+                            className="w-full bg-[#f5f8fa] border border-[#cbd6e2] rounded-lg pl-10 pr-4 py-2 text-xs focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-[#33475b] focus:bg-white transition-all font-medium"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleSyncWhatsapp}
+                          disabled={syncingWhatsapp || loadingWhatsapp}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-[#2d544c] hover:bg-[#1f3a35] text-white text-xs font-bold rounded-lg transition-all disabled:opacity-50 shadow-sm"
+                        >
+                          <RefreshCcw className={`w-3.5 h-3.5 ${syncingWhatsapp || loadingWhatsapp ? 'animate-spin' : ''}`} />
+                          Sincronizar
+                        </button>
+                      </div>
+
+                      {/* Contenedor del Chat */}
+                      {loadingWhatsapp ? (
+                        <div className="flex flex-col items-center justify-center py-20 text-[#516f90] gap-2 text-xs font-semibold animate-pulse">
+                          <RefreshCcw className="w-5 h-5 animate-spin text-[#2d544c] mb-1" />
+                          <span>Cargando chat de WhatsApp...</span>
+                        </div>
+                      ) : (whatsappMessages || []).filter(m => !whatsappSearch || (m.body && m.body.toLowerCase().includes(whatsappSearch.toLowerCase()))).length === 0 ? (
+                        <div className="text-center py-20 bg-white border border-[#cbd6e2] rounded-xl shadow-sm space-y-2">
+                          <MessageSquare className="w-10 h-10 text-zinc-300 mx-auto" />
+                          <p className="text-xs text-[#516f90] font-bold">No se encontraron mensajes de WhatsApp</p>
+                          {selectedLead.Phone || selectedLead.phone ? (
+                            <p className="text-[10px] text-slate-400">Número asociado: {selectedLead.Phone || selectedLead.phone}</p>
+                          ) : (
+                            <p className="text-[10px] text-red-500 font-semibold">Este contacto no tiene teléfono registrado</p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col bg-[#efeae2] border border-[#cbd6e2]/80 rounded-2xl p-4 min-h-[450px] max-h-[500px] overflow-y-auto space-y-4 shadow-inner custom-scrollbar">
+                          {(whatsappMessages || [])
+                            .filter(m => !whatsappSearch || (m.body && m.body.toLowerCase().includes(whatsappSearch.toLowerCase())))
+                            .map((msg) => {
+                              const isMe = msg.from_me;
+                              return (
+                                <div 
+                                  key={msg.id || msg.message_id} 
+                                  className={`flex flex-col max-w-[75%] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}
+                                >
+                                  {/* Nombre de Asesor si fue enviado por nosotros */}
+                                  {isMe && (
+                                    <span className="text-[9px] font-bold text-slate-500 mb-0.5 mr-1.5 block">
+                                      {msg.advisor_name || 'Asesor'}
+                                    </span>
+                                  )}
+                                  
+                                  {/* Globo de chat */}
+                                  <div className={`p-3 rounded-2xl shadow-sm relative text-xs leading-relaxed ${
+                                    isMe 
+                                      ? 'bg-[#2d544c] text-white rounded-tr-none' 
+                                      : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/50'
+                                  }`}>
+                                    <p className="whitespace-pre-wrap font-medium">{msg.body}</p>
+                                    
+                                    {/* Fecha / Hora */}
+                                    <span className={`text-[8px] mt-1.5 block text-right font-semibold ${
+                                      isMe ? 'text-emerald-200' : 'text-slate-400'
+                                    }`}>
+                                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {' - '}
+                                      {new Date(msg.timestamp).toLocaleDateString([], { day: '2-digit', month: '2-digit' })}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
                     </>
                   ) : (
                     /* Actividad Técnica */
