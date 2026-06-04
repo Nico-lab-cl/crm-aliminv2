@@ -82,14 +82,21 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Invalid or empty fields array' }, { status: 400 });
       }
 
-      // We will perform a batch insert
+      // Filter fields to only include columns that actually exist in the DB
+      const existingColsRes = await queryMain(`
+        SELECT column_name FROM information_schema.columns WHERE table_name = 'Lead'
+      `);
+      const existingCols = new Set(existingColsRes.rows.map((r: any) => r.column_name));
+      const validFields = fields.filter((f: string) => existingCols.has(f));
+
+      // Build batch insert with only valid fields
       const valuePlaceholders: string[] = [];
       const params: any[] = [];
       let paramIdx = 1;
 
       for (const lead of leads) {
         const rowPlaceholders: string[] = [];
-        fields.forEach((field: string) => {
+        validFields.forEach((field: string) => {
           rowPlaceholders.push(`$${paramIdx++}`);
           let val = lead[field];
           if (val === undefined || val === '') val = null;
@@ -104,43 +111,15 @@ export async function POST(request: Request) {
         valuePlaceholders.push(`(${rowPlaceholders.join(', ')})`);
       }
 
-      // Check fields matching standard columns
-      const updateClauses: string[] = [];
-      fields.forEach((field: string) => {
-        if (field !== 'id' && field !== 'email') {
-          updateClauses.push(`"${field}" = COALESCE("Lead"."${field}", EXCLUDED."${field}")`);
-        }
-      });
-      // Explicitly append tags and notes merge logic
-      const tagsIndex = fields.indexOf('tags');
-      const notesIndex = fields.indexOf('notes');
-
-      if (tagsIndex !== -1) {
-        const idx = fields.indexOf('tags');
-        // Custom tag concatenation in conflict
-        updateClauses[updateClauses.findIndex(c => c.startsWith('"tags" ='))] = 
-          `tags = COALESCE("Lead".tags || ', ' || EXCLUDED.tags, EXCLUDED.tags)`;
-      }
-      if (notesIndex !== -1) {
-        // Custom notes concatenation in conflict
-        updateClauses[updateClauses.findIndex(c => c.startsWith('"notes" ='))] = 
-          `notes = COALESCE("Lead".notes || '\n' || EXCLUDED.notes, EXCLUDED.notes)`;
-      }
-
+      // Simple INSERT, skip duplicates by primary key (id)
       const query = `
-        INSERT INTO "Lead" (${fields.map(f => `"${f}"`).join(', ')})
+        INSERT INTO "Lead" (${validFields.map((f: string) => `"${f}"`).join(', ')})
         VALUES ${valuePlaceholders.join(', ')}
-        ON CONFLICT (email) DO UPDATE SET
-          "firstName" = EXCLUDED."firstName",
-          "lastName" = COALESCE("Lead"."lastName", EXCLUDED."lastName"),
-          phone = COALESCE("Lead".phone, EXCLUDED.phone),
-          city = COALESCE("Lead".city, EXCLUDED.city),
-          ${updateClauses.join(', ')},
-          "updatedAt" = NOW()
+        ON CONFLICT (id) DO NOTHING
       `;
 
-      await queryMain(query, params);
-      return NextResponse.json({ success: true, count: leads.length });
+      const result = await queryMain(query, params);
+      return NextResponse.json({ success: true, count: leads.length, inserted: result.rowCount });
     }
 
     if (action === 'clean_tags') {
