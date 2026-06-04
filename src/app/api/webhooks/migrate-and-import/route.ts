@@ -63,9 +63,6 @@ export async function POST(request: Request) {
       // 2. Insert/Update Users
       const insertUsersQuery = `
         INSERT INTO "User" (id, name, username, role, password, "createdAt", "updatedAt") VALUES
-        ('11111111-1111-1111-1111-111111111111', 'Orlando Costa', 'orlando.costa', 'ASESOR', 'placeholder_pw', NOW(), NOW()),
-        ('22222222-2222-2222-2222-222222222222', 'Barbara Arias', 'barbara.arias', 'ASESOR', 'placeholder_pw', NOW(), NOW()),
-        ('33333333-3333-3333-3333-333333333333', 'Marcela Escobar', 'marcela.escobar', 'ASESOR', 'placeholder_pw', NOW(), NOW()),
         ('44444444-4444-4444-4444-444444444444', 'Alimin', 'alimin', 'ASESOR', 'placeholder_pw', NOW(), NOW()),
         ('55555555-5555-5555-5555-555555555555', 'Cami Poblete Yout', 'cami.poblete', 'ASESOR', 'placeholder_pw', NOW(), NOW()),
         ('66666666-6666-6666-6666-666666666666', 'Cindy Gutierrez', 'cindy.gutierrez', 'ASESOR', 'placeholder_pw', NOW(), NOW()),
@@ -75,6 +72,95 @@ export async function POST(request: Request) {
       await pool.query(insertUsersQuery);
 
       return NextResponse.json({ success: true, message: 'Database migrations and advisor setup executed successfully.' });
+    }
+
+    if (action === 'cleanup_advisors') {
+      const mappings = [
+        {
+          duplicateId: '11111111-1111-1111-1111-111111111111', // Orlando Costa
+          targetId: 'a6ce92ca-f1a1-4dcf-a042-fda1c31ca485'     // Orlando C
+        },
+        {
+          duplicateId: '22222222-2222-2222-2222-222222222222', // Barbara Arias
+          targetId: '77cea468-b4a5-44e6-aaa5-0a3f376affb1'     // Barbara A
+        },
+        {
+          duplicateId: '33333333-3333-3333-3333-333333333333', // Marcela Escobar
+          targetId: 'db1e6577-01b1-4615-b35e-0d50752452f3'     // Marcela E
+        }
+      ];
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        let totalLeadsMigrated = 0;
+
+        for (const mapping of mappings) {
+          // 1. Reassign Leads
+          const leadRes = await client.query(
+            'UPDATE "Lead" SET "assignedToId" = $1 WHERE "assignedToId" = $2',
+            [mapping.targetId, mapping.duplicateId]
+          );
+          totalLeadsMigrated += leadRes.rowCount || 0;
+
+          // 2. Reassign Reservations
+          await client.query(
+            'UPDATE "Reservation" SET "createdById" = $1 WHERE "createdById" = $2',
+            [mapping.targetId, mapping.duplicateId]
+          );
+
+          // 3. Reassign Messages
+          await client.query(
+            'UPDATE "Message" SET "senderId" = $1 WHERE "senderId" = $2',
+            [mapping.targetId, mapping.duplicateId]
+          );
+
+          // 4. Reassign Notifications
+          await client.query(
+            'UPDATE "Notification" SET "userId" = $1 WHERE "userId" = $2',
+            [mapping.targetId, mapping.duplicateId]
+          );
+
+          // 5. Delete the duplicate User
+          await client.query(
+            'DELETE FROM "User" WHERE id = $1',
+            [mapping.duplicateId]
+          );
+        }
+
+        await client.query('COMMIT');
+
+        // Send exactly one push notification to each target advisor
+        const { createNotification } = await import('@/lib/notifications');
+        let notificationsSent = 0;
+
+        for (const mapping of mappings) {
+          try {
+            await createNotification({
+              userId: mapping.targetId,
+              title: "Carga de Clientes Históricos 📈",
+              body: "Agregamos todos los clientes a nivel historico que estaban registrados, ahora tu base de datos es mayor",
+              type: "ASSIGNMENT"
+            });
+            notificationsSent++;
+          } catch (notifErr: any) {
+            console.error(`Failed to send notification to user ${mapping.targetId}:`, notifErr.message);
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: 'Cleanup completed successfully.',
+          leadsMigrated: totalLeadsMigrated,
+          notificationsSent
+        });
+      } catch (err: any) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     }
 
     if (action === 'import') {
