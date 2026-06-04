@@ -21,9 +21,9 @@ const clientifyFile = path.join(__dirname, '..', 'LEADS clientify.xlsx');
 
 // Advisor mappings
 const ADVISOR_MAP = {
-  'Orlando Costa': '11111111-1111-1111-1111-111111111111',
-  'Barbara Arias': '22222222-2222-2222-2222-222222222222',
-  'Marcela Escobar': '33333333-3333-3333-3333-333333333333',
+  'Orlando Costa': 'a6ce92ca-f1a1-4dcf-a042-fda1c31ca485', // Orlando C
+  'Barbara Arias': '77cea468-b4a5-44e6-aaa5-0a3f376affb1', // Barbara A
+  'Marcela Escobar': 'db1e6577-01b1-4615-b35e-0d50752452f3', // Marcela E
   'Alimin': '44444444-4444-4444-4444-444444444444',
   'Cami Poblete Yout': '55555555-5555-5555-5555-555555555555',
   'Cindy Gutierrez': '66666666-6666-6666-6666-666666666666',

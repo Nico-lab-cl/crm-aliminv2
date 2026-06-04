@@ -48,9 +48,6 @@ export async function POST(request: Request) {
 
       const insertUsersQuery = `
         INSERT INTO "User" (id, name, username, role, password, "createdAt", "updatedAt") VALUES
-        ('11111111-1111-1111-1111-111111111111', 'Orlando Costa', 'orlando.costa', 'ASESOR', 'placeholder_pw', NOW(), NOW()),
-        ('22222222-2222-2222-2222-222222222222', 'Barbara Arias', 'barbara.arias', 'ASESOR', 'placeholder_pw', NOW(), NOW()),
-        ('33333333-3333-3333-3333-333333333333', 'Marcela Escobar', 'marcela.escobar', 'ASESOR', 'placeholder_pw', NOW(), NOW()),
         ('44444444-4444-4444-4444-444444444444', 'Alimin', 'alimin', 'ASESOR', 'placeholder_pw', NOW(), NOW()),
         ('55555555-5555-5555-5555-555555555555', 'Cami Poblete Yout', 'cami.poblete', 'ASESOR', 'placeholder_pw', NOW(), NOW()),
         ('66666666-6666-6666-6666-666666666666', 'Cindy Gutierrez', 'cindy.gutierrez', 'ASESOR', 'placeholder_pw', NOW(), NOW()),
