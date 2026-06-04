@@ -75,6 +75,13 @@ model Lead {
   adName       String?
   formId       String?
 
+  // Qualification fields
+  pie            String?
+  monthlyPayment String?
+  creditInterest String?
+  preferredChannel String?
+  inboxUrl       String?
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   
