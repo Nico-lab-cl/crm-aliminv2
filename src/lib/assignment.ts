@@ -18,8 +18,9 @@ const REDIRECTION_END = new Date("2026-04-03T01:00:00-03:00");
  */
 const MARCELA_EXCLUDED = false;
 
-const MARCELA_ID = "db1e6577-01b1-4615-b35e-0d50752452f3";
-const ORLANDO_ID = "a6ce92ca-f1a1-4dcf-a042-fda1c31ca485";
+export const MARCELA_ID = "db1e6577-01b1-4615-b35e-0d50752452f3";
+export const ORLANDO_ID = "a6ce92ca-f1a1-4dcf-a042-fda1c31ca485";
+export const BARBARA_ID = "77cea468-b4a5-44e6-aaa5-0a3f376affb1";
 
 /**
  * GLOBAL SWITCH: Set to true to resume automatic assignments.
@@ -48,7 +49,7 @@ export function isWithinAssignmentWindow(): boolean {
   return true;
 }
 
-export async function getNextAdvisorId(allowedIds?: string[]) {
+export async function getNextAdvisorId(allowedIds?: string[], source?: string | null) {
   if (!AUTO_ASSIGNMENT_ENABLED) {
     console.log("[Auto-Assignment] Global assignment is currently DISABLED. Returning null.");
     return null;
@@ -65,6 +66,20 @@ export async function getNextAdvisorId(allowedIds?: string[]) {
     let targetAdvisors = allowedIds 
       ? ADVISORS.filter(a => allowedIds.includes(a.id))
       : [...ADVISORS];
+
+    // Dynamic Source-based Exclusions: Exclude Barbara from Meta and Web leads
+    if (source) {
+      const cleanSource = source.toLowerCase();
+      const isMetaOrWeb = cleanSource.includes("meta") || 
+                          cleanSource.includes("web") || 
+                          cleanSource.includes("newsletter") ||
+                          cleanSource.includes("facebook") ||
+                          cleanSource.includes("instagram");
+      if (isMetaOrWeb) {
+        console.log(`[Auto-Assignment] Excluded Barbara from lead assignment. Source: ${source}`);
+        targetAdvisors = targetAdvisors.filter(a => a.id !== BARBARA_ID);
+      }
+    }
 
     // 2. Apply Marcela's manual exclusion
     if (MARCELA_EXCLUDED) {

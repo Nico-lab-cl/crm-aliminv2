@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     const allowedIds = isMetaLead ? [MARCELA_ID, ORLANDO_ID] : undefined;
 
     // 4. Get the next advisor in the Round Robin sequence
-    const assignedToId = await getNextAdvisorId(allowedIds);
+    const assignedToId = await getNextAdvisorId(allowedIds, lead.source);
 
     if (!assignedToId) {
        return NextResponse.json({ 

@@ -43,7 +43,8 @@ export async function syncExternalLeads() {
 
         let assignedToId = existingLead?.assignedToId || null;
         if (!assignedToId) {
-          assignedToId = await getNextAdvisorId();
+          const leadSource = ext.externalProject === 'Newsletter' ? 'Newsletter' : 'web aliminspa.cl';
+          assignedToId = await getNextAdvisorId(undefined, leadSource);
         }
 
         await (prisma as any).lead.upsert({
@@ -134,7 +135,8 @@ export async function syncReservationLeads() {
 
         let assignedToId = existingLead?.assignedToId || null;
         if (!assignedToId) {
-          assignedToId = await getNextAdvisorId();
+          const leadSource = existingLead?.source || "lomasdelmar";
+          assignedToId = await getNextAdvisorId(undefined, leadSource);
         }
 
         await (prisma as any).lead.upsert({

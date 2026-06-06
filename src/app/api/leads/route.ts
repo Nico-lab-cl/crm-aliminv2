@@ -305,7 +305,7 @@ export async function POST(req: Request) {
       const isMetaLead = leadData.source === "META" || (data.field_data && Array.isArray(data.field_data));
       const allowedIds = isMetaLead ? [MARCELA_ID, ORLANDO_ID] : undefined;
       
-      assignedToId = await getNextAdvisorId(allowedIds);
+      assignedToId = await getNextAdvisorId(allowedIds, leadData.source);
       leadData.assignedToId = assignedToId;
     }
 
