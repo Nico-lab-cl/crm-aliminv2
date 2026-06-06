@@ -15,13 +15,33 @@ export const AD_VIDEO_MAPPING: Record<string, string> = {
   "MOFU | Lomas del mar| 02 | 25-03-2026": "/videos/ads/lomas-del-mar-02-25-03.mp4",
   "MOFU| Lomas del mar| 02 | 25-03-2026": "/videos/ads/lomas-del-mar-02-25-03.mp4",
   "RO | MOFU Abril 9 | FM 35-65+ | Reel 3": "/videos/ads/Reel3_Abril9.mp4",
+  
+  // Lomas 1 and 2 Form/Ad campaigns added on 06-06-2026
+  "Lomas 1 | formulario | 06-06-2026": "/videos/ads/v1_horizontal.mp4",
+  "120247526100780263": "/videos/ads/v1_horizontal.mp4",
+  "Lomas 2 | formulario | 06-06-2026": "/videos/ads/v2_horizontal.mp4",
+  "120247526441530263": "/videos/ads/v2_horizontal.mp4",
 };
 
 /**
- * Gets the video URL for a given ad name by looking it up in the mapping.
- * Uses trimmed matching to handle leading/trailing whitespace.
+ * Gets the video URL for a given ad name/ID by looking it up in the mapping.
+ * Uses trimmed matching and checks adId and formId for robust identification.
  */
-export function getAdVideoUrl(adName: string | undefined): string | null {
+export function getAdVideoUrl(
+  adName: string | undefined,
+  adId?: string | null,
+  formId?: string | null
+): string | null {
+  // Try mapping by adId first
+  if (adId && AD_VIDEO_MAPPING[adId.trim()]) {
+    return AD_VIDEO_MAPPING[adId.trim()];
+  }
+  
+  // Try mapping by formId next
+  if (formId && AD_VIDEO_MAPPING[formId.trim()]) {
+    return AD_VIDEO_MAPPING[formId.trim()];
+  }
+
   if (!adName) return null;
   
   const trimmedName = adName.trim();

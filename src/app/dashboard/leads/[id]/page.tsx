@@ -65,7 +65,7 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
   const [reservationCount, setReservationCount] = useState(0);
 
   const isAdmin = (session?.user as any)?.role === "ADMIN";
-  const videoUrl = getAdVideoUrl(lead?.adName);
+  const videoUrl = getAdVideoUrl(lead?.adName, lead?.adId, lead?.formId);
   const adImages = getAdImages(lead?.adName);
 
   useEffect(() => {
