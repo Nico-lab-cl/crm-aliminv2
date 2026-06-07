@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { queryMarketing } from '@/lib/db';
+import { dispatchExistingLeads } from '@/lib/automation_utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,26 +25,36 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, form_id, campaign_ids, active } = body;
+    const { name, form_id, segment_id, campaign_ids, active } = body;
 
-    if (!name || !form_id) {
+    if (!name || (!form_id && !segment_id)) {
       return NextResponse.json(
-        { message: 'El nombre de la regla y el ID de formulario (form_id) son requeridos.' },
+        { message: 'El nombre de la regla y al menos un ID de formulario o un segmento de interés son requeridos.' },
         { status: 400 }
       );
     }
 
     const campaignIdsJson = JSON.stringify(campaign_ids || []);
+    const isActive = active !== undefined ? active : true;
 
     const query = `
-      INSERT INTO meta_automations (name, form_id, campaign_ids, active)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO meta_automations (name, form_id, segment_id, campaign_ids, active)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `;
-    const params = [name, form_id, campaignIdsJson, active !== undefined ? active : true];
+    const params = [name, form_id || null, segment_id || null, campaignIdsJson, isActive];
 
     const result = await queryMarketing(query, params);
-    return NextResponse.json(result.rows[0]);
+    const newRule = result.rows[0];
+
+    // Trigger immediate background dispatch for existing leads if active and has segment_id
+    if (isActive && segment_id) {
+      dispatchExistingLeads(newRule).catch(err => {
+        console.error('[API meta-automations POST] Failed to trigger background dispatch:', err);
+      });
+    }
+
+    return NextResponse.json(newRule);
   } catch (error) {
     console.error('Error creating meta-automation:', error);
     return NextResponse.json(

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
   ArrowLeft, Plus, Zap, Trash2, Edit2, Loader2, CheckCircle2, 
-  AlertCircle, Search, Mail, Play, ToggleLeft, ToggleRight 
+  AlertCircle, Search, Mail, Play, ToggleLeft, ToggleRight, ListFilter
 } from 'lucide-react';
 
 interface Campaign {
@@ -13,10 +13,17 @@ interface Campaign {
   subject: string;
 }
 
+interface Segment {
+  id: string;
+  name: string;
+  type: 'dynamic' | 'static';
+}
+
 interface AutomationRule {
   id: number;
   name: string;
-  form_id: string;
+  form_id?: string;
+  segment_id?: string;
   campaign_ids: string[] | string;
   active: boolean;
   created_at: string;
@@ -25,6 +32,7 @@ interface AutomationRule {
 export default function MetaAutomationsPage() {
   const [rules, setRules] = useState<AutomationRule[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [segments, setSegments] = useState<Segment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -34,6 +42,7 @@ export default function MetaAutomationsPage() {
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
   const [ruleName, setRuleName] = useState('');
   const [formId, setFormId] = useState('');
+  const [segmentId, setSegmentId] = useState('');
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>([]);
   const [ruleActive, setRuleActive] = useState(true);
   const [campaignSearch, setCampaignSearch] = useState('');
@@ -43,7 +52,7 @@ export default function MetaAutomationsPage() {
   const [isTestModalOpen, setIsTestModalOpen] = useState(false);
   const [testRule, setTestRule] = useState<AutomationRule | null>(null);
   const [testEmail, setTestEmail] = useState('test_lead@alimin.cl');
-  const [testName, setTestName] = useState('Juan Test Meta');
+  const [testName, setTestName] = useState('Juan Test Segmento');
   const [testPhone, setTestPhone] = useState('+56999999999');
   const [testPie, setTestPie] = useState('5.500.000 CLP');
   const [testing, setTesting] = useState(false);
@@ -56,20 +65,23 @@ export default function MetaAutomationsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [rulesRes, campaignsRes] = await Promise.all([
+      const [rulesRes, campaignsRes, segmentsRes] = await Promise.all([
         fetch('/api/meta-automations'),
-        fetch('/api/campaigns')
+        fetch('/api/campaigns'),
+        fetch('/api/segments')
       ]);
 
-      if (!rulesRes.ok || !campaignsRes.ok) {
+      if (!rulesRes.ok || !campaignsRes.ok || !segmentsRes.ok) {
         throw new Error('Error al cargar datos del servidor');
       }
 
       const rulesData = await rulesRes.json();
       const campaignsData = await campaignsRes.json();
+      const segmentsData = await segmentsRes.json();
 
       setRules(rulesData);
       setCampaigns(campaignsData);
+      setSegments(segmentsData);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -81,6 +93,7 @@ export default function MetaAutomationsPage() {
     setEditingRule(null);
     setRuleName('');
     setFormId('');
+    setSegmentId('');
     setSelectedCampaignIds([]);
     setRuleActive(true);
     setCampaignSearch('');
@@ -90,7 +103,8 @@ export default function MetaAutomationsPage() {
   const handleOpenEditModal = (rule: AutomationRule) => {
     setEditingRule(rule);
     setRuleName(rule.name);
-    setFormId(rule.form_id);
+    setFormId(rule.form_id || '');
+    setSegmentId(rule.segment_id || '');
     
     let ids: string[] = [];
     try {
@@ -111,8 +125,8 @@ export default function MetaAutomationsPage() {
 
   const handleSaveRule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ruleName.trim() || !formId.trim()) {
-      setError('Por favor, completa los campos requeridos.');
+    if (!ruleName.trim() || (!formId.trim() && !segmentId.trim())) {
+      setError('Por favor, completa los campos requeridos (Nombre y un disparador).');
       return;
     }
 
@@ -121,7 +135,8 @@ export default function MetaAutomationsPage() {
 
     const payload = {
       name: ruleName,
-      form_id: formId,
+      form_id: formId || null,
+      segment_id: segmentId || null,
       campaign_ids: selectedCampaignIds,
       active: ruleActive
     };
@@ -147,11 +162,15 @@ export default function MetaAutomationsPage() {
         throw new Error(errorData.message || 'Error al guardar la regla');
       }
 
-      setSuccess(editingRule ? 'Regla actualizada con éxito!' : 'Regla creada con éxito!');
+      setSuccess(
+        editingRule 
+          ? 'Regla actualizada con éxito! Si se activó o cambió el segmento, los leads calificados se enviarán en segundo plano.' 
+          : 'Regla creada con éxito! Los leads que califiquen en el segmento se enviarán de inmediato en segundo plano.'
+      );
       setIsModalOpen(false);
       fetchData();
       
-      setTimeout(() => setSuccess(null), 4000);
+      setTimeout(() => setSuccess(null), 6000);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -172,7 +191,7 @@ export default function MetaAutomationsPage() {
         throw new Error('No se pudo eliminar la regla');
       }
 
-      setSuccess('Regla eliminada correctamente.');
+      setSuccess('Regla de automatización eliminada correctamente.');
       fetchData();
       setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
@@ -193,7 +212,8 @@ export default function MetaAutomationsPage() {
 
     const payload = {
       name: rule.name,
-      form_id: rule.form_id,
+      form_id: rule.form_id || null,
+      segment_id: rule.segment_id || null,
       campaign_ids: ids,
       active: !rule.active
     };
@@ -207,8 +227,9 @@ export default function MetaAutomationsPage() {
 
       if (!res.ok) throw new Error('Error al actualizar estado');
       
-      // Update locally immediately for speed
+      setSuccess(!rule.active ? 'Regla activada! Los leads del segmento se procesarán en segundo plano.' : 'Regla desactivada.');
       setRules(rules.map(r => r.id === rule.id ? { ...r, active: !r.active } : r));
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
       setError((err as Error).message);
       fetchData();
@@ -231,7 +252,7 @@ export default function MetaAutomationsPage() {
       email: testEmail,
       name: testName,
       phone: testPhone,
-      formid: testRule.form_id,
+      formid: testRule.form_id || 'test-form',
       adname: 'Test Ad Campaign',
       pie: testPie
     };
@@ -291,6 +312,12 @@ export default function MetaAutomationsPage() {
     }
   };
 
+  const getSegmentName = (ruleSegId?: string) => {
+    if (!ruleSegId) return 'Sin segmento asociado';
+    const seg = segments.find(s => s.id === ruleSegId);
+    return seg ? `${seg.name} (${seg.type === 'static' ? 'Estática' : 'Dinámica'})` : `Segmento no encontrado (${ruleSegId})`;
+  };
+
   const filteredCampaigns = campaigns.filter(c => 
     c.title.toLowerCase().includes(campaignSearch.toLowerCase()) ||
     c.subject.toLowerCase().includes(campaignSearch.toLowerCase())
@@ -321,10 +348,10 @@ export default function MetaAutomationsPage() {
           </div>
           <h1 className="text-3xl font-bold text-[#2d544c] flex items-center gap-2">
             <Zap className="w-8 h-8 fill-current text-[#2d544c]" />
-            Automatizaciones Meta
+            Automatizaciones Meta por Segmentos
           </h1>
           <p className="text-[#516f90]">
-            Mapea formularios de Facebook/Instagram Ads para despachar campañas de correo completas a tu webhook especial de n8n.
+            Configura el envío automático de campañas para cualquier lead que califique en tus Listas y Segmentos.
           </p>
         </div>
 
@@ -367,7 +394,7 @@ export default function MetaAutomationsPage() {
               <thead>
                 <tr className="bg-[#f5f8fa] text-[#516f90] text-xs font-bold uppercase tracking-wider border-b border-[#cbd6e2]">
                   <th className="px-6 py-4">Regla</th>
-                  <th className="px-6 py-4">Meta Form ID</th>
+                  <th className="px-6 py-4">Disparador / Segmento</th>
                   <th className="px-6 py-4">Campañas Asociadas</th>
                   <th className="px-6 py-4 text-center">Estado</th>
                   <th className="px-6 py-4 text-right">Acciones</th>
@@ -385,9 +412,16 @@ export default function MetaAutomationsPage() {
                         </p>
                       </td>
                       <td className="px-6 py-4">
-                        <code className="bg-[#eaf0f6] text-[#2d544c] px-2.5 py-1 rounded-md text-xs font-mono font-bold">
-                          {rule.form_id}
-                        </code>
+                        {rule.segment_id ? (
+                          <span className="bg-[#eaf0f6] text-[#2d544c] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 w-fit">
+                            <ListFilter className="w-4 h-4 text-[#2d544c]" />
+                            {getSegmentName(rule.segment_id)}
+                          </span>
+                        ) : (
+                          <code className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-mono font-bold block w-fit">
+                            📱 FormID: {rule.form_id}
+                          </code>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
@@ -414,13 +448,15 @@ export default function MetaAutomationsPage() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-2.5">
-                          <button 
-                            onClick={() => handleOpenTestModal(rule)}
-                            className="p-1.5 border border-[#cbd6e2] hover:border-[#2d544c] hover:bg-[#eaf0f6] text-[#516f90] hover:text-[#2d544c] rounded-lg transition-all"
-                            title="Probar automatización"
-                          >
-                            <Play className="w-4 h-4 fill-current" />
-                          </button>
+                          {rule.form_id && (
+                            <button 
+                              onClick={() => handleOpenTestModal(rule)}
+                              className="p-1.5 border border-[#cbd6e2] hover:border-[#2d544c] hover:bg-[#eaf0f6] text-[#516f90] hover:text-[#2d544c] rounded-lg transition-all"
+                              title="Probar automatización antigua"
+                            >
+                              <Play className="w-4 h-4 fill-current" />
+                            </button>
+                          )}
                           <button 
                             onClick={() => handleOpenEditModal(rule)}
                             className="p-1.5 border border-[#cbd6e2] hover:border-[#2d544c] text-[#516f90] hover:text-[#2d544c] rounded-lg transition-all"
@@ -449,9 +485,9 @@ export default function MetaAutomationsPage() {
               <Zap className="w-8 h-8 fill-current" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-base font-bold text-[#33475b]">No hay automatizaciones configuradas</h3>
+              <h3 className="text-base font-bold text-[#33475b]">No hay automatizaciones de segmentos</h3>
               <p className="text-sm text-[#516f90]">
-                Crea tu primera regla para vincular leads de Meta con tus campañas de Email Marketing.
+                Crea tu primera regla vinculando un Segmento Dinámico o Estático con tus campañas de Email.
               </p>
             </div>
             <button 
@@ -465,17 +501,16 @@ export default function MetaAutomationsPage() {
         )}
       </div>
 
-      {/* Config Card / Explainer */}
+      {/* Explainer Banner */}
       <div className="bg-[#eaf0f6] border border-[#2d544c]/10 rounded-2xl p-6 flex items-start gap-4">
         <div className="p-3 bg-white rounded-xl text-[#2d544c] shadow-sm">
-          <Zap className="w-6 h-6 fill-current" />
+          <ListFilter className="w-6 h-6" />
         </div>
         <div className="space-y-2">
-          <h4 className="font-bold text-[#2d544c]">¿Cómo funciona este webhook?</h4>
+          <h4 className="font-bold text-[#2d544c]">¿Cómo funciona la automatización por Segmentos?</h4>
           <p className="text-sm text-[#516f90] leading-relaxed">
-            Al registrarse una regla, cuando llega un lead desde Meta con el <strong>FormID</strong> configurado,
-            el sistema recopila la información básica del cliente junto al listado completo de campañas seleccionadas
-            (incluyendo su diseño HTML completo y MJML) y las despacha de inmediato en formato JSON al webhook especial de n8n.
+            1. <strong>Envío Masivo Inmediato</strong>: Al crear o activar una regla con un Segmento, el CRM busca todos los contactos guardados en la base de datos que cumplen con los filtros de esa lista y los despacha al flujo en segundo plano de manera asíncrona.<br />
+            2. <strong>Ingreso en Tiempo Real</strong>: Cuando un lead entra desde Meta o formularios Web, se evalúan los filtros del segmento. Si el lead califica, se envía al instante al webhook especial de n8n.
           </p>
           <div className="text-xs font-mono bg-white border border-[#cbd6e2] p-2.5 rounded-lg text-[#33475b] select-all truncate">
             https://n8n.aliminlomasdelmar.com/webhook/cf17a03e-fd4c-4355-bc20-e007f73ee2a8
@@ -493,7 +528,7 @@ export default function MetaAutomationsPage() {
               <div className="flex items-center gap-2">
                 <Zap className="w-5 h-5 fill-current" />
                 <h3 className="text-xl font-bold">
-                  {editingRule ? 'Editar Regla de Automatización' : 'Nueva Regla de Automatización'}
+                  {editingRule ? 'Editar Regla por Segmento' : 'Nueva Regla por Segmento'}
                 </h3>
               </div>
               <button 
@@ -515,28 +550,33 @@ export default function MetaAutomationsPage() {
                 <input 
                   type="text" 
                   required
-                  placeholder="Ej: Automatización Lomas del Mar FB Ads"
+                  placeholder="Ej: Automatización Leads Meta Lomas del Mar"
                   className="w-full bg-[#f5f8fa] border border-[#cbd6e2] rounded-xl px-4 py-2.5 text-[#33475b] focus:ring-2 focus:ring-[#2d544c]/20 outline-none"
                   value={ruleName}
                   onChange={(e) => setRuleName(e.target.value)}
                 />
               </div>
 
-              {/* Form ID */}
+              {/* Segment Selector */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-[#516f90] uppercase tracking-wider block">
-                  Meta Form ID <span className="text-red-500">*</span>
+                  Lista / Segmento Asociado <span className="text-red-500">*</span>
                 </label>
-                <input 
-                  type="text" 
+                <select 
                   required
-                  placeholder="Ej: 4410004195897067"
-                  className="w-full bg-[#f5f8fa] border border-[#cbd6e2] rounded-xl px-4 py-2.5 text-[#33475b] focus:ring-2 focus:ring-[#2d544c]/20 outline-none font-mono"
-                  value={formId}
-                  onChange={(e) => setFormId(e.target.value)}
-                />
+                  className="w-full bg-[#f5f8fa] border border-[#cbd6e2] rounded-xl px-4 py-2.5 text-[#33475b] focus:ring-2 focus:ring-[#2d544c]/20 outline-none font-medium"
+                  value={segmentId}
+                  onChange={(e) => setSegmentId(e.target.value)}
+                >
+                  <option value="">-- Selecciona una Lista o Segmento --</option>
+                  {segments.map(seg => (
+                    <option key={seg.id} value={seg.id}>
+                      {seg.name} ({seg.type === 'static' ? 'Estática' : 'Dinámica'})
+                    </option>
+                  ))}
+                </select>
                 <p className="text-[10px] text-[#516f90]">
-                  Este ID debe coincidir exactamente con el campo `formid` enviado en el webhook de Meta.
+                  Cualquier lead que califique con las reglas de esta lista (ahora y en el futuro) gatillará esta automatización.
                 </p>
               </div>
 
@@ -544,7 +584,7 @@ export default function MetaAutomationsPage() {
               <div className="flex items-center justify-between p-4 bg-[#f5f8fa] rounded-xl border border-[#cbd6e2]">
                 <div>
                   <span className="font-bold text-[#33475b] text-sm block">Regla Activa</span>
-                  <span className="text-xs text-[#516f90]">Las reglas inactivas no procesarán leads entrantes.</span>
+                  <span className="text-xs text-[#516f90]">Las reglas inactivas no procesarán envíos.</span>
                 </div>
                 <button
                   type="button"
@@ -565,7 +605,7 @@ export default function MetaAutomationsPage() {
                   <label className="text-xs font-bold text-[#516f90] uppercase tracking-wider block">
                     Seleccionar Campañas de Correo ({selectedCampaignIds.length})
                   </label>
-                  <span className="text-[10px] text-[#516f90] font-medium">Se enviará el HTML de cada una en el JSON.</span>
+                  <span className="text-[10px] text-[#516f90] font-medium">Se enviará el HTML de cada una al webhook.</span>
                 </div>
                 
                 {/* Search box */}
@@ -641,7 +681,7 @@ export default function MetaAutomationsPage() {
         </div>
       )}
 
-      {/* END-TO-END TEST MODAL */}
+      {/* TEST MODAL */}
       {isTestModalOpen && testRule && (
         <div className="fixed inset-0 bg-[#33475b]/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white border border-[#cbd6e2] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in scale-in duration-200">
@@ -661,8 +701,7 @@ export default function MetaAutomationsPage() {
 
             <div className="p-6 space-y-4">
               <p className="text-xs text-[#516f90]">
-                Esto enviará un lead simulado con el FormID <strong>{testRule.form_id}</strong> a la API local de Meta,
-                desencadenando el envío de las campañas seleccionadas al webhook de n8n.
+                Esto simulará un lead proveniente de Meta con el FormID antiguo de la regla: <strong>{testRule.form_id}</strong>.
               </p>
 
               <div className="space-y-1.5">

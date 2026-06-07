@@ -27,14 +27,12 @@ async function runMigration() {
   if (marketingDbUrl) {
     connections.push({ name: 'Configured DB', url: marketingDbUrl });
     
-    // If it's using the docker hostname, add localhost counterpart
     if (marketingDbUrl.includes('n8n_db-crm')) {
       const localUrl = marketingDbUrl.replace('n8n_db-crm', 'localhost');
       connections.push({ name: 'Configured DB (Localhost fallback)', url: localUrl });
     }
   }
   
-  // Try default localhost databases
   connections.push({
     name: 'Localhost crm_marketing',
     url: 'postgresql://nicolas:nicolas@localhost:5432/crm_marketing?sslmode=disable'
@@ -44,7 +42,6 @@ async function runMigration() {
     url: 'postgresql://nicolas:nicolas@localhost:5432/crm?sslmode=disable'
   });
   
-  // Try remote production database
   connections.push({
     name: 'Production Fallback (aliminspa)',
     url: 'postgresql://nicolas:zampullido20@84.247.162.186:5433/aliminspa?sslmode=disable'
@@ -59,22 +56,39 @@ async function runMigration() {
 
     try {
       await client.connect();
-      console.log(`Connected successfully to ${conn.name}! Running migration query...`);
+      console.log(`Connected successfully to ${conn.name}! Running migration queries...`);
 
-      const query = `
+      // 1. Create table if not exists
+      await client.query(`
         CREATE TABLE IF NOT EXISTS meta_automations (
           id SERIAL PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
-          form_id VARCHAR(255) NOT NULL,
+          form_id VARCHAR(255),
+          segment_id VARCHAR(255),
           campaign_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
           active BOOLEAN DEFAULT TRUE,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )
-      `;
+      `);
 
-      await client.query(query);
-      console.log("SUCCESS: 'meta_automations' table is ready.");
+      // 2. Add segment_id column if not exists
+      await client.query(`
+        ALTER TABLE meta_automations 
+        ADD COLUMN IF NOT EXISTS segment_id VARCHAR(255)
+      `);
+
+      // 3. Drop NOT NULL constraint on form_id
+      try {
+        await client.query(`
+          ALTER TABLE meta_automations 
+          ALTER COLUMN form_id DROP NOT NULL
+        `);
+      } catch (err) {
+        console.log('Drop NOT NULL on form_id bypassed:', (err as Error).message);
+      }
+
+      console.log("SUCCESS: 'meta_automations' table structure is updated and ready.");
 
       await client.end();
       return; // Stop after success

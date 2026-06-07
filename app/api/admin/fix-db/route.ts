@@ -312,16 +312,41 @@ export async function GET() {
         CREATE TABLE meta_automations (
           id SERIAL PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
-          form_id VARCHAR(255) NOT NULL,
+          form_id VARCHAR(255),
+          segment_id VARCHAR(255),
           campaign_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
           active BOOLEAN DEFAULT TRUE,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )
       `);
-      results.push("Created 'meta_automations' table.");
+      results.push("Created 'meta_automations' table with form_id and segment_id.");
     } else {
-      results.push("'meta_automations' table already exists.");
+      results.push("'meta_automations' table already exists. Checking columns...");
+      
+      // Ensure segment_id column exists
+      const checkSegmentCol = await queryMarketing(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'meta_automations' AND column_name = 'segment_id'
+      `);
+      if (checkSegmentCol.rows.length === 0) {
+        await queryMarketing(`
+          ALTER TABLE meta_automations 
+          ADD COLUMN segment_id VARCHAR(255)
+        `);
+        results.push("Added 'segment_id' column to 'meta_automations'.");
+      }
+
+      // Ensure form_id is nullable
+      try {
+        await queryMarketing(`
+          ALTER TABLE meta_automations 
+          ALTER COLUMN form_id DROP NOT NULL
+        `);
+      } catch (err) {
+        console.warn('Could not drop NOT NULL constraint on form_id:', err);
+      }
     }
 
     // 8. Debug info for Lead table columns and date range counts
