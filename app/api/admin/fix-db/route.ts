@@ -300,6 +300,30 @@ export async function GET() {
       }
     }
 
+    // 7c. Check if 'meta_automations' table exists
+    const checkMetaAutomationsTable = await queryMarketing(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_name = 'meta_automations'
+    `);
+
+    if (checkMetaAutomationsTable.rows.length === 0) {
+      await queryMarketing(`
+        CREATE TABLE meta_automations (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          form_id VARCHAR(255) NOT NULL,
+          campaign_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+          active BOOLEAN DEFAULT TRUE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      results.push("Created 'meta_automations' table.");
+    } else {
+      results.push("'meta_automations' table already exists.");
+    }
+
     // 8. Debug info for Lead table columns and date range counts
     try {
       const colsRes = await queryMain(`

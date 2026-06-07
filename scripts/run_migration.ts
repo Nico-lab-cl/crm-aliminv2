@@ -1,0 +1,90 @@
+import { Client } from 'pg';
+import * as fs from 'fs';
+import * as path from 'path';
+
+async function runMigration() {
+  let marketingDbUrl = process.env.MARKETING_DB_URL;
+
+  if (!marketingDbUrl) {
+    console.log('No MARKETING_DB_URL found in process.env, loading from .env.local...');
+    try {
+      const envPath = path.join(process.cwd(), '.env.local');
+      if (fs.existsSync(envPath)) {
+        const envContent = fs.readFileSync(envPath, 'utf8');
+        const match = envContent.match(/^MARKETING_DB_URL=(.+)$/m);
+        if (match) {
+          marketingDbUrl = match[1].trim();
+          console.log('Loaded MARKETING_DB_URL from .env.local:', marketingDbUrl.replace(/:[^:@]+@/, ':***@'));
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading .env.local:', e);
+    }
+  }
+
+  // Fallbacks
+  const connections = [];
+  if (marketingDbUrl) {
+    connections.push({ name: 'Configured DB', url: marketingDbUrl });
+    
+    // If it's using the docker hostname, add localhost counterpart
+    if (marketingDbUrl.includes('n8n_db-crm')) {
+      const localUrl = marketingDbUrl.replace('n8n_db-crm', 'localhost');
+      connections.push({ name: 'Configured DB (Localhost fallback)', url: localUrl });
+    }
+  }
+  
+  // Try default localhost databases
+  connections.push({
+    name: 'Localhost crm_marketing',
+    url: 'postgresql://nicolas:nicolas@localhost:5432/crm_marketing?sslmode=disable'
+  });
+  connections.push({
+    name: 'Localhost crm',
+    url: 'postgresql://nicolas:nicolas@localhost:5432/crm?sslmode=disable'
+  });
+  
+  // Try remote production database
+  connections.push({
+    name: 'Production Fallback (aliminspa)',
+    url: 'postgresql://nicolas:zampullido20@84.247.162.186:5433/aliminspa?sslmode=disable'
+  });
+
+  for (const conn of connections) {
+    console.log(`Trying to connect to ${conn.name}...`);
+    const client = new Client({
+      connectionString: conn.url,
+      connectionTimeoutMillis: 5000
+    });
+
+    try {
+      await client.connect();
+      console.log(`Connected successfully to ${conn.name}! Running migration query...`);
+
+      const query = `
+        CREATE TABLE IF NOT EXISTS meta_automations (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          form_id VARCHAR(255) NOT NULL,
+          campaign_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+          active BOOLEAN DEFAULT TRUE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      await client.query(query);
+      console.log("SUCCESS: 'meta_automations' table is ready.");
+
+      await client.end();
+      return; // Stop after success
+    } catch (err) {
+      console.error(`Error on ${conn.name}:`, (err as Error).message);
+    }
+  }
+
+  console.error('Migration failed: Could not connect to any database.');
+  process.exit(1);
+}
+
+runMigration();

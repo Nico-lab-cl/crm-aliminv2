@@ -73,7 +73,91 @@ export async function POST(request: Request) {
 
     await queryMain(insertQuery, insertVals);
 
-    // 2. Buscar si hay una campaña automatizada para este FormID
+    // === NUEVA AUTOMATIZACIÓN CONFIGURABLE (WEBHOOK ESPECIAL) ===
+    try {
+      const rulesRes = await queryMarketing(`
+        SELECT * FROM meta_automations 
+        WHERE active = true 
+        AND form_id = $1
+      `, [formid]);
+
+      if (rulesRes.rows.length > 0) {
+        console.log(`[Meta Webhook] Encontradas ${rulesRes.rows.length} reglas activas para el form_id: ${formid}`);
+        
+        // Obtener el ID del lead guardado
+        const leadIdRes = await queryMain('SELECT id FROM "Lead" WHERE email = $1 LIMIT 1', [email]);
+        const leadId = leadIdRes.rows[0]?.id;
+
+        for (const rule of rulesRes.rows) {
+          const campaignIds = Array.isArray(rule.campaign_ids) 
+            ? rule.campaign_ids 
+            : typeof rule.campaign_ids === 'string' 
+              ? JSON.parse(rule.campaign_ids) 
+              : [];
+
+          if (campaignIds.length > 0) {
+            const campaignsRes = await queryMarketing(`
+              SELECT id, title, subject, html_content, mjml_content 
+              FROM campaigns 
+              WHERE id = ANY($1)
+            `, [campaignIds]);
+            const matchedCampaigns = campaignsRes.rows;
+
+            if (matchedCampaigns.length > 0) {
+              const webhookPayload = {
+                lead: {
+                  id: leadId || null,
+                  email,
+                  name: name || '',
+                  phone: phone || '',
+                  formid,
+                  adname: resolvedAdName,
+                  pie: resolvedPie,
+                  source: 'META',
+                  created_at: new Date().toISOString()
+                },
+                automation: {
+                  id: rule.id,
+                  name: rule.name
+                },
+                campaigns: matchedCampaigns.map(c => ({
+                  id: c.id,
+                  title: c.title,
+                  subject: c.subject,
+                  html_content: c.html_content,
+                  mjml_content: c.mjml_content
+                }))
+              };
+
+              const specialWebhookUrl = 'https://n8n.aliminlomasdelmar.com/webhook/cf17a03e-fd4c-4355-bc20-e007f73ee2a8';
+              fetch(specialWebhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(webhookPayload),
+              })
+              .then(async (res) => {
+                console.log(`[Meta Webhook] Payload enviado al webhook especial para la regla "${rule.name}". Status: ${res.status}`);
+                
+                // Registrar notificación de automatización enviada
+                const titleMsg = `Automatización Meta: ${rule.name}`;
+                const messageMsg = `Se enviaron ${matchedCampaigns.length} campaña(s) a n8n para el lead ${name || email}`;
+                await queryMarketing(`
+                  INSERT INTO notifications (lead_id, email, event_type, title, message)
+                  VALUES ($1, $2, $3, $4, $5)
+                `, [leadId, email, 'EMAIL_SENT', titleMsg, messageMsg]);
+              })
+              .catch(err => {
+                console.error(`[Meta Webhook] Error al enviar al webhook especial para la regla "${rule.name}":`, err);
+              });
+            }
+          }
+        }
+      }
+    } catch (newAutoError) {
+      console.error('[Meta Webhook] Error en el flujo de nueva automatización:', newAutoError);
+    }
+
+    // 2. Buscar si hay una campaña automatizada para este FormID (Flujo anterior)
     const campaignRes = await queryMarketing(`
       SELECT * FROM campaigns 
       WHERE is_automation = true 
