@@ -49,6 +49,7 @@ export default function MetaAutomationsPage() {
   const [ruleActive, setRuleActive] = useState(true);
   const [campaignSearch, setCampaignSearch] = useState('');
   const [saving, setSaving] = useState(false);
+  const [defaultWebhookUrl, setDefaultWebhookUrl] = useState('https://n8n.aliminlomasdelmar.com/webhook/451ea8a2-a6d4-4827-9c6f-375ba8adcdd8');
 
   // Test State
   const [isTestModalOpen, setIsTestModalOpen] = useState(false);
@@ -84,6 +85,11 @@ export default function MetaAutomationsPage() {
       const campaignsData = await campaignsRes.json();
       const segmentsData = await segmentsRes.json();
 
+      const defaultUrlFromHeader = rulesRes.headers.get('x-default-webhook-url');
+      if (defaultUrlFromHeader) {
+        setDefaultWebhookUrl(defaultUrlFromHeader);
+      }
+
       setRules(rulesData);
       setCampaigns(campaignsData);
       setSegments(segmentsData);
@@ -99,7 +105,7 @@ export default function MetaAutomationsPage() {
     setRuleName('');
     setFormId('');
     setSegmentId('');
-    setWebhookUrl('https://n8n.aliminlomasdelmar.com/webhook/cf17a03e-fd4c-4355-bc20-e007f73ee2a8');
+    setWebhookUrl(defaultWebhookUrl);
     setSelectedCampaignIds([]);
     setRuleActive(true);
     setCampaignSearch('');
@@ -111,7 +117,11 @@ export default function MetaAutomationsPage() {
     setRuleName(rule.name);
     setFormId(rule.form_id || '');
     setSegmentId(rule.segment_id || '');
-    setWebhookUrl(rule.webhook_url || 'https://n8n.aliminlomasdelmar.com/webhook/cf17a03e-fd4c-4355-bc20-e007f73ee2a8');
+    
+    const currentWebhook = rule.webhook_url === 'https://n8n.aliminlomasdelmar.com/webhook/cf17a03e-fd4c-4355-bc20-e007f73ee2a8'
+      ? defaultWebhookUrl
+      : (rule.webhook_url || defaultWebhookUrl);
+    setWebhookUrl(currentWebhook);
     
     let ids: string[] = [];
     try {
@@ -438,8 +448,8 @@ export default function MetaAutomationsPage() {
                             📱 FormID: {rule.form_id}
                           </code>
                         )}
-                        <p className="text-[10px] text-[#516f90] mt-1.5 font-mono max-w-[240px] truncate" title={rule.webhook_url || 'https://n8n.aliminlomasdelmar.com/webhook/cf17a03e-fd4c-4355-bc20-e007f73ee2a8'}>
-                          🔗 {rule.webhook_url ? rule.webhook_url : 'Webhook por Defecto'}
+                        <p className="text-[10px] text-[#516f90] mt-1.5 font-mono max-w-[240px] truncate" title={rule.webhook_url === 'https://n8n.aliminlomasdelmar.com/webhook/cf17a03e-fd4c-4355-bc20-e007f73ee2a8' ? defaultWebhookUrl : (rule.webhook_url || defaultWebhookUrl)}>
+                          🔗 {rule.webhook_url && rule.webhook_url !== 'https://n8n.aliminlomasdelmar.com/webhook/cf17a03e-fd4c-4355-bc20-e007f73ee2a8' ? rule.webhook_url : 'Webhook por Defecto'}
                         </p>
                       </td>
                       <td className="px-6 py-4">
@@ -530,7 +540,7 @@ export default function MetaAutomationsPage() {
             2. <strong>Ingreso en Tiempo Real</strong>: Cuando un lead entra desde Meta o formularios Web, se evalúan los filtros del segmento. Si el lead califica, se envía al instante al webhook especial de n8n.
           </p>
           <div className="text-xs font-mono bg-white border border-[#cbd6e2] p-2.5 rounded-lg text-[#33475b] select-all truncate">
-            https://n8n.aliminlomasdelmar.com/webhook/cf17a03e-fd4c-4355-bc20-e007f73ee2a8
+            {defaultWebhookUrl}
           </div>
         </div>
       </div>

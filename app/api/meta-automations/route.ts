@@ -11,7 +11,14 @@ export async function GET() {
       SELECT * FROM meta_automations 
       ORDER BY created_at DESC
     `);
-    return NextResponse.json(res.rows);
+    
+    const defaultWebhookUrl = process.env.N8N_WEBHOOK_URL || 'https://n8n.aliminlomasdelmar.com/webhook/451ea8a2-a6d4-4827-9c6f-375ba8adcdd8';
+    
+    return NextResponse.json(res.rows, {
+      headers: {
+        'x-default-webhook-url': defaultWebhookUrl
+      }
+    });
   } catch (error) {
     console.error('Error fetching meta-automations:', error);
     return NextResponse.json(
