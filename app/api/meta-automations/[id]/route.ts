@@ -10,9 +10,53 @@ interface RouteParams {
   };
 }
 
+async function ensureSchema() {
+  try {
+    // 1. Create table if not exists
+    await queryMarketing(`
+      CREATE TABLE IF NOT EXISTS meta_automations (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        form_id VARCHAR(255),
+        segment_id VARCHAR(255),
+        webhook_url VARCHAR(1000),
+        campaign_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // 2. Add columns if they do not exist
+    await queryMarketing(`
+      ALTER TABLE meta_automations 
+      ADD COLUMN IF NOT EXISTS segment_id VARCHAR(255)
+    `);
+
+    await queryMarketing(`
+      ALTER TABLE meta_automations 
+      ADD COLUMN IF NOT EXISTS webhook_url VARCHAR(1000)
+    `);
+
+    // 3. Drop NOT NULL constraint on form_id
+    try {
+      await queryMarketing(`
+        ALTER TABLE meta_automations 
+        ALTER COLUMN form_id DROP NOT NULL
+      `);
+    } catch (err) {
+      console.warn('Drop NOT NULL on form_id bypassed:', (err as Error).message);
+    }
+  } catch (error) {
+    console.error('[ensureSchema] Error running on-the-fly migration:', error);
+  }
+}
+
 // PUT edit rule
 export async function PUT(request: Request, { params }: RouteParams) {
   try {
+    await ensureSchema();
+    
     const id = params.id;
     const body = await request.json();
     const { name, form_id, segment_id, campaign_ids, active, webhook_url } = body;
