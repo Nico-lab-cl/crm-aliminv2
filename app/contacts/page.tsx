@@ -28,7 +28,9 @@ import {
   Globe,
   MousePointer,
   Phone,
-  ArrowRight
+  ArrowRight,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 
 interface Lead {
@@ -125,6 +127,10 @@ export default function ContactsPage() {
   const [whatsappSearch, setWhatsappSearch] = useState('');
   const [syncingWhatsapp, setSyncingWhatsapp] = useState(false);
 
+  // Estado para eliminar contacto
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   // Actividades del Lead
   const [activities, setActivities] = useState<TimelineEvent[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(false);
@@ -207,6 +213,7 @@ export default function ContactsPage() {
   useEffect(() => {
     if (selectedLead) {
       setNewNote(selectedLead.notes || '');
+      setShowDeleteConfirm(false);
     }
   }, [selectedLead]);
 
@@ -233,6 +240,37 @@ export default function ContactsPage() {
     } finally {
       setIsUpdatingField(false);
     }
+  };
+
+  // Función para eliminar un contacto
+  const handleDeleteLead = async () => {
+    if (!selectedLead) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/leads/${selectedLead.id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        // Remover el lead de la lista local
+        setLeads(prevLeads => prevLeads.filter(l => l.id !== selectedLead.id));
+        setTotalCount(prev => prev - 1);
+        setSelectedLead(null);
+        setShowDeleteConfirm(false);
+      } else {
+        const errorData = await res.json();
+        alert('Error al eliminar: ' + (errorData.message || 'Error desconocido'));
+      }
+    } catch (e) {
+      console.error('Error deleting lead:', e);
+      alert('Error en la conexión con el servidor al eliminar el contacto.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Helper para obtener el nombre del asesor
+  const getLeadAdvisorName = (lead: Lead) => {
+    return lead.AdvisorName || lead.advisorName || lead.assignedTo?.name || 'No Asignado';
   };
 
   // Estado del Modal de Añadir Contacto
@@ -1092,17 +1130,68 @@ export default function ContactsPage() {
                       {getLeadSource(selectedLead)}
                     </span>
                   </h2>
-                  <p className="text-xs text-[#516f90] font-medium">{getLeadEmail(selectedLead)}</p>
+                  <div className="flex items-center gap-3 mt-0.5">
+                    <p className="text-xs text-[#516f90] font-medium">{getLeadEmail(selectedLead)}</p>
+                    {getLeadAdvisorName(selectedLead) !== 'No Asignado' && (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Users className="w-3 h-3" />
+                        {getLeadAdvisorName(selectedLead)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               
-              <button 
-                onClick={() => setSelectedLead(null)}
-                className="p-2 text-[#516f90] hover:text-[#33475b] hover:bg-[#f5f8fa] rounded-full transition-all"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Botón Eliminar Contacto */}
+                <button 
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-200"
+                  title="Eliminar contacto"
+                >
+                  <Trash2 className="w-4.5 h-4.5" />
+                </button>
+                <button 
+                  onClick={() => { setSelectedLead(null); setShowDeleteConfirm(false); }}
+                  className="p-2 text-[#516f90] hover:text-[#33475b] hover:bg-[#f5f8fa] rounded-full transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
+
+            {/* Diálogo de Confirmación de Eliminación */}
+            {showDeleteConfirm && (
+              <div className="px-6 py-4 bg-red-50 border-b border-red-200 animate-fade-in">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-red-100 rounded-lg shrink-0">
+                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-bold text-red-800">¿Eliminar este contacto permanentemente?</h4>
+                    <p className="text-xs text-red-600 mt-1 leading-relaxed">
+                      Se eliminará a <strong>{getLeadName(selectedLead)}</strong> y todos sus datos asociados de la base de datos. Esta acción no se puede deshacer.
+                    </p>
+                    <div className="flex items-center gap-2 mt-3">
+                      <button
+                        onClick={handleDeleteLead}
+                        disabled={isDeleting}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {isDeleting ? 'Eliminando...' : 'Sí, Eliminar Contacto'}
+                      </button>
+                      <button
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-lg transition-all border border-slate-200"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Pipeline de Estado Visual - Barra de Progreso Clickable */}
             <div className="px-6 py-3 bg-white border-b border-[#cbd6e2]/60">

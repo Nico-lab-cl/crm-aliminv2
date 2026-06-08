@@ -132,3 +132,62 @@ export async function PATCH(
     );
   }
 }
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params;
+
+    // 1. Intentar conectar a la base de datos
+    let columns: string[] = [];
+    let dbConnected = false;
+
+    try {
+      const schemaRes = await queryMain(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'Lead'
+      `);
+      columns = schemaRes.rows.map(r => r.column_name);
+      dbConnected = columns.length > 0;
+    } catch {
+      console.warn('No se pudo conectar a la base de datos en DELETE /api/leads/[id], operando en modo simulado.');
+    }
+
+    // 2. Si no hay conexión, eliminar del arreglo mock en memoria
+    if (!dbConnected) {
+      const idx = MOCK_LEADS.findIndex(l => l.id === id);
+      if (idx === -1) {
+        return NextResponse.json({ message: 'Contacto no encontrado (simulado)' }, { status: 404 });
+      }
+      MOCK_LEADS.splice(idx, 1);
+      return NextResponse.json({
+        success: true,
+        message: 'Contacto eliminado de la memoria (modo simulación)'
+      });
+    }
+
+    // 3. Eliminar de la base de datos
+    const idCol = columns.find(c => c.toLowerCase() === 'id') || 'id';
+    const query = `DELETE FROM "Lead" WHERE "${idCol}" = $1 RETURNING "id"`;
+    const res = await queryMain(query, [id]);
+
+    if (res.rowCount === 0) {
+      return NextResponse.json({ message: 'Contacto no encontrado en la base de datos.' }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Contacto eliminado correctamente de la base de datos.'
+    });
+
+  } catch (error) {
+    console.error('Error in DELETE /api/leads/[id]:', error);
+    return NextResponse.json(
+      { message: 'Error interno al eliminar el contacto', error: (error as Error).message },
+      { status: 500 }
+    );
+  }
+}
