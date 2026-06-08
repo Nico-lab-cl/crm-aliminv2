@@ -8,6 +8,8 @@ export function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/api/track') ||
     pathname.startsWith('/api/webhooks') ||
+    pathname.startsWith('/api/leads/webhook') ||
+    pathname.startsWith('/api/admin/fix-db') ||
     pathname.startsWith('/api/login') ||
     pathname === '/login' ||
     pathname.startsWith('/_next') ||
@@ -37,6 +39,6 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      */
-    '/((?!api/track|api/webhooks|_next/static|_next/image|favicon.ico).*)',
+    '/((?!api/track|api/webhooks|api/leads/webhook|api/admin/fix-db|_next/static|_next/image|favicon.ico).*)',
   ],
 };

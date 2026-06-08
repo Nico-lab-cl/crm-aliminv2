@@ -215,6 +215,6 @@ export async function POST(request: Request) {
 
   } catch (error) {
     console.error('Error in Meta Webhook:', error);
-    return NextResponse.json({ message: 'Error interno' }, { status: 500 });
+    return NextResponse.json({ message: 'Error interno', detail: (error as Error).message }, { status: 500 });
   }
 }
