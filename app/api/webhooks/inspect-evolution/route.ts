@@ -18,76 +18,41 @@ export async function GET() {
     `);
     const tables = tablesRes.rows.map(r => r.table_name);
 
-    const result: any = {
-      tables,
-      details: {}
-    };
-
-    // Find message and instance tables
     const msgTable = tables.find(t => t.toLowerCase() === 'message');
-    const instTable = tables.find(t => t.toLowerCase() === 'instance');
-    const chatTable = tables.find(t => t.toLowerCase() === 'chat');
 
     if (msgTable) {
-      // Get columns
-      const colsRes = await client.query(`
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
-        WHERE table_name = $1 AND table_schema = 'public'
-      `, [msgTable]);
-
-      // Get indexes
-      const indexesRes = await client.query(`
-        SELECT
-            i.relname as index_name,
-            a.attname as column_name
-        FROM
-            pg_class t,
-            pg_class i,
-            pg_index ix,
-            pg_attribute a
-        WHERE
-            t.oid = ix.indrelid
-            and i.oid = ix.indexrelid
-            and a.attrelid = t.oid
-            and a.attnum = ANY(ix.indkey)
-            and t.relkind = 'r'
-            and t.relname = $1
-      `, [msgTable]);
-
-      // Get row count
-      const countRes = await client.query(`SELECT count(*) FROM "${msgTable}"`);
-
-      // Sample rows
-      const sampleRes = await client.query(`SELECT * FROM "${msgTable}" LIMIT 1`);
-
-      result.details[msgTable] = {
-        rowCount: countRes.rows[0].count,
-        columns: colsRes.rows.map(r => ({ name: r.column_name, type: r.data_type })),
-        indexes: indexesRes.rows,
-        sample: sampleRes.rows[0]
-      };
+      console.log('Creating indexes on Evolution Message table...');
+      await client.query(`CREATE INDEX IF NOT EXISTS "idx_message_instanceId" ON "${msgTable}" ("instanceId")`);
+      await client.query(`CREATE INDEX IF NOT EXISTS "idx_message_timestamp" ON "${msgTable}" ("messageTimestamp")`);
+      await client.query(`CREATE INDEX IF NOT EXISTS "idx_message_key_remoteJid" ON "${msgTable}" (("key"->>'remoteJid'))`);
+      await client.query(`CREATE INDEX IF NOT EXISTS "idx_message_key_remoteJidAlt" ON "${msgTable}" (("key"->>'remoteJidAlt'))`);
+      console.log('Indexes created successfully.');
     }
 
-    if (instTable) {
-      const countRes = await client.query(`SELECT count(*) FROM "${instTable}"`);
-      const rowsRes = await client.query(`SELECT * FROM "${instTable}"`);
-      result.details[instTable] = {
-        rowCount: countRes.rows[0].count,
-        rows: rowsRes.rows
-      };
-    }
+    // Get updated indexes
+    const indexesRes = await client.query(`
+      SELECT
+          i.relname as index_name,
+          a.attname as column_name
+      FROM
+          pg_class t,
+          pg_class i,
+          pg_index ix,
+          pg_attribute a
+      WHERE
+          t.oid = ix.indrelid
+          and i.oid = ix.indexrelid
+          and a.attrelid = t.oid
+          and a.attnum = ANY(ix.indkey)
+          and t.relkind = 'r'
+          and t.relname = $1
+    `, [msgTable]);
 
-    if (chatTable) {
-      const countRes = await client.query(`SELECT count(*) FROM "${chatTable}"`);
-      const sampleRes = await client.query(`SELECT * FROM "${chatTable}" LIMIT 3`);
-      result.details[chatTable] = {
-        rowCount: countRes.rows[0].count,
-        rows: sampleRes.rows
-      };
-    }
-
-    return NextResponse.json({ success: true, ...result });
+    return NextResponse.json({
+      success: true,
+      message: 'Indexes created/checked successfully',
+      indexes: indexesRes.rows
+    });
 
   } catch (error) {
     return NextResponse.json({ success: false, error: (error as Error).message }, { status: 500 });
