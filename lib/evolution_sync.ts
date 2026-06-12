@@ -44,6 +44,28 @@ export async function initWhatsappTable() {
     }
     await queryMarketing(`CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_lead_id ON whatsapp_messages(lead_id)`);
     await queryMarketing(`CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_timestamp ON whatsapp_messages(timestamp)`);
+    
+    // Corregir nombres de asesores antiguos en los mensajes existentes para que coincidan con la tabla "User"
+    try {
+      await queryMarketing(`
+        UPDATE whatsapp_messages 
+        SET advisor_name = 'Orlando Costa' 
+        WHERE advisor_name = 'Orlando Castillo'
+      `);
+      await queryMarketing(`
+        UPDATE whatsapp_messages 
+        SET advisor_name = 'Marcela Escobar' 
+        WHERE advisor_name = 'Marcela Espinoza'
+      `);
+      await queryMarketing(`
+        UPDATE whatsapp_messages 
+        SET advisor_name = 'Barbara Arias' 
+        WHERE advisor_name = 'Barbara'
+      `);
+    } catch (err) {
+      console.warn('Error al corregir nombres de asesores antiguos:', err);
+    }
+
     console.log('✓ Tabla whatsapp_messages verificada/creada correctamente en la base de datos de Marketing.');
   } catch (error) {
     console.error('Error al inicializar tabla whatsapp_messages:', error);
@@ -62,6 +84,7 @@ interface EvolutionSchemaMeta {
   timestampCol: string;
   instanceCol: string;
   pushNameCol: string | null;
+  hasKeyCol: boolean;
 }
 
 function escapeIdentifier(name: string): string {
@@ -105,7 +128,7 @@ async function introspectEvolutionSchema(pool: Pool): Promise<EvolutionSchemaMet
     const hasKeyCol = cols.includes('key');
 
     const idCol = hasKeyCol ? `"key"->>'id'` : (cols.find(c => ['id', 'keyId', 'keyid', 'messageId', 'messageid'].includes(c)) || 'id');
-    const jidCol = hasKeyCol ? `"key"->>'remoteJid'` : (cols.find(c => ['remoteJid', 'remote_jid', 'jid', 'remotejid'].includes(c)) || 'remoteJid');
+    const jidCol = hasKeyCol ? `COALESCE("key"->>'remoteJidAlt', "key"->>'remoteJid')` : (cols.find(c => ['remoteJid', 'remote_jid', 'jid', 'remotejid'].includes(c)) || 'remoteJid');
     const fromMeCol = hasKeyCol ? `("key"->>'fromMe')::boolean` : (cols.find(c => ['fromMe', 'from_me', 'fromme'].includes(c)) || 'fromMe');
     const contentCol = cols.find(c => ['message', 'content', 'body', 'text'].includes(c)) || 'message';
     const timestampCol = cols.find(c => ['messageTimestamp', 'timestamp', 'createdAt', 'created_at', 'messagetimestamp'].includes(c)) || 'messageTimestamp';
@@ -120,7 +143,8 @@ async function introspectEvolutionSchema(pool: Pool): Promise<EvolutionSchemaMet
       contentCol,
       timestampCol,
       instanceCol,
-      pushNameCol
+      pushNameCol,
+      hasKeyCol
     };
   } finally {
     client.release();
@@ -302,7 +326,11 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
 
     if (jid) {
       queryParams.push(jid);
-      selectClauses.push(`${escapeIdentifier(schema.jidCol)} = $${queryParams.length}`);
+      if (schema.hasKeyCol) {
+        selectClauses.push(`("key"->>'remoteJid' = $${queryParams.length} OR "key"->>'remoteJidAlt' = $${queryParams.length})`);
+      } else {
+        selectClauses.push(`${escapeIdentifier(schema.jidCol)} = $${queryParams.length}`);
+      }
     }
 
     if (sinceTimestamp) {
@@ -421,6 +449,13 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
 
     console.log(`Sincronización completada. Se insertaron ${insertedCount} mensajes en la base de datos local.`);
     
+    // Ejecutar migración de LIDs históricos a JIDs reales
+    try {
+      await migrateLidsToRealJids();
+    } catch (err) {
+      console.error('Error al migrar LIDs históricos:', err);
+    }
+    
     // Ejecutar vinculación retroactiva para enlazar chats huérfanos con nuevos contactos creados
     await retroactiveLinkLeads();
 
@@ -516,3 +551,72 @@ async function checkIsBigIntColumn(client: PoolClient, tableName: string, column
   }
   return false;
 }
+
+/**
+ * Migra los remote_jid de tipo @lid almacenados localmente a su JID real (@s.whatsapp.net)
+ * consultando la base de datos de Evolution API.
+ */
+export async function migrateLidsToRealJids() {
+  const pool = getEvolutionPool();
+  let client;
+  try {
+    // 1. Obtener todos los JIDs de tipo @lid en nuestra DB local
+    const lidRes = await queryMarketing(`
+      SELECT DISTINCT remote_jid 
+      FROM whatsapp_messages 
+      WHERE remote_jid LIKE '%@lid'
+    `);
+    
+    if (lidRes.rows.length === 0) {
+      return;
+    }
+    
+    const lids = lidRes.rows.map(r => r.remote_jid);
+    console.log(`[LID Migration] Encontrados ${lids.length} JIDs de tipo @lid para migrar.`);
+    
+    client = await pool.connect();
+    
+    // Introspectar si existe la columna "key" en la tabla Message
+    const schema = await introspectEvolutionSchema(pool);
+    if (!schema.hasKeyCol) {
+      console.log('[LID Migration] La base de datos de Evolution no tiene columna JSONB "key", abortando migración.');
+      return;
+    }
+    
+    let migratedCount = 0;
+    
+    for (const lid of lids) {
+      // Buscar el remoteJidAlt correspondiente a este LID en la DB de Evolution
+      const matchRes = await client.query(`
+        SELECT "key"->>'remoteJidAlt' as real_jid
+        FROM "${schema.tableName}"
+        WHERE "key"->>'remoteJid' = $1 AND "key"->>'remoteJidAlt' IS NOT NULL
+        LIMIT 1
+      `, [lid]);
+      
+      if (matchRes.rows.length > 0 && matchRes.rows[0].real_jid) {
+        const realJid = matchRes.rows[0].real_jid;
+        
+        console.log(`[LID Migration] Migrando ${lid} -> ${realJid}`);
+        
+        // Actualizar todos los registros en nuestra DB local
+        const updateRes = await queryMarketing(`
+          UPDATE whatsapp_messages
+          SET remote_jid = $1
+          WHERE remote_jid = $2
+        `, [realJid, lid]);
+        
+        migratedCount += updateRes.rowCount || 0;
+      }
+    }
+    
+    if (migratedCount > 0) {
+      console.log(`[LID Migration] Éxito. Se actualizaron ${migratedCount} mensajes con su JID real.`);
+    }
+  } catch (err) {
+    console.error('[LID Migration] Error durante la migración de LIDs:', err);
+  } finally {
+    if (client) client.release();
+  }
+}
+
