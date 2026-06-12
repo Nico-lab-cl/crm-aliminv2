@@ -211,29 +211,32 @@ export default function SignatureEditor({ initialData }: SignatureEditorProps) {
         `;
       }).join('');
 
+    // Fila inferior para redes sociales y logo (lado a lado, muy elegante)
+    const bottomRowHtml = (socialLinksHtml || logoHtml)
+      ? `<table cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin-top: 10px; width: 100%;">
+          <tr>
+            ${socialLinksHtml ? `<td style="padding: 0; vertical-align: middle;">${socialLinksHtml}</td>` : ''}
+            ${logoHtml ? `<td style="padding: 0; text-align: right; vertical-align: middle;" align="right">${logoHtml}</td>` : ''}
+          </tr>
+         </table>`
+      : '';
+
     // ============================================
     // PLANTILLA 1: PREMIUM EXECUTIVE (Borde de Acento Fino + Foto & Logo)
     // ============================================
     if (styling.template_id === 'modern_border') {
-      const leftPaneContent = `
-        <table cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
-          ${avatarHtml ? `<tr><td style="padding-bottom: 10px;" align="center">${avatarHtml}</td></tr>` : ''}
-          ${logoHtml ? `<tr><td style="padding-top: 4px;" align="center">${logoHtml}</td></tr>` : ''}
-        </table>
-      `;
-
       return `
         <table cellpadding="0" cellspacing="0" style="font-family: ${font}, sans-serif; font-size: 13px; color: ${text}; line-height: 1.35; border-collapse: collapse; text-align: left; background-color: transparent;">
           <tr>
-            <!-- Columna Izquierda: Imagenes (Avatar y Logo) -->
-            ${(avatarHtml || logoHtml) ? `<td style="padding-right: 18px; vertical-align: top; text-align: center;" valign="top" align="center">${leftPaneContent}</td>` : ''}
+            <!-- Columna Izquierda: Solo Foto de Perfil -->
+            ${avatarHtml ? `<td style="padding-right: 18px; vertical-align: top; text-align: center;" valign="top" align="center">${avatarHtml}</td>` : ''}
             
             <!-- Línea Divisoria Vertical Fina -->
             <td style="width: 1px; background-color: #e2e8f0; padding: 0;" width="1"></td>
             
-            <!-- Columna Derecha: Datos -->
+            <!-- Columna Derecha: Datos, Redes y Logo -->
             <td style="padding-left: 18px; vertical-align: top;" valign="top">
-              <table cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+              <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%;">
                 <tr>
                   <td style="padding: 0 0 4px 0;">
                     <div style="font-size: 15px; font-weight: bold; color: ${primary}; margin: 0; line-height: 1.2;">${personal_info.name}</div>
@@ -252,14 +255,10 @@ export default function SignatureEditor({ initialData }: SignatureEditorProps) {
                     </table>
                   </td>
                 </tr>
-                ${socialLinksHtml ? `
+                ${bottomRowHtml ? `
                 <tr>
-                  <td style="padding: 8px 0 0 0;">
-                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
-                      <tr>
-                        <td style="padding: 0;">${socialLinksHtml}</td>
-                      </tr>
-                    </table>
+                  <td style="padding: 0;">
+                    ${bottomRowHtml}
                   </td>
                 </tr>` : ''}
               </table>
@@ -273,32 +272,15 @@ export default function SignatureEditor({ initialData }: SignatureEditorProps) {
     // PLANTILLA 2: TWO COLUMNS CARD (Formato Tarjeta en Columnas)
     // ============================================
     if (styling.template_id === 'two_column') {
-      const socialBlockHtml = socialLinksHtml
-        ? `<table cellpadding="0" cellspacing="0" style="margin-top: 8px; width: 100%; border-collapse: collapse;">
-            <tr>
-              <td align="center" style="padding: 0; text-align: center;">
-                ${socialLinksHtml}
-              </td>
-            </tr>
-           </table>`
-        : '';
-
-      const leftPaneContent = `
-        <table cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
-          ${avatarHtml ? `<tr><td style="padding-bottom: 6px;" align="center">${avatarHtml}</td></tr>` : ''}
-          ${socialBlockHtml ? `<tr><td align="center">${socialBlockHtml}</td></tr>` : ''}
-        </table>
-      `;
-
       return `
         <table cellpadding="0" cellspacing="0" style="font-family: ${font}, sans-serif; font-size: 13px; color: ${text}; line-height: 1.35; border-collapse: collapse; text-align: left;">
           <tr>
-            <!-- Columna Izquierda: Avatar y Redes -->
-            ${(avatarHtml || socialLinksHtml) ? `<td style="padding-right: 20px; vertical-align: top; text-align: center; width: 85px;" width="85" align="center" valign="top">${leftPaneContent}</td>` : ''}
+            <!-- Columna Izquierda: Solo Foto de Perfil -->
+            ${avatarHtml ? `<td style="padding-right: 20px; vertical-align: top; text-align: center; width: 75px;" width="75" align="center" valign="top">${avatarHtml}</td>` : ''}
             
-            <!-- Columna Derecha: Datos -->
+            <!-- Columna Derecha: Datos, Redes y Logo -->
             <td style="vertical-align: top; padding-left: 10px;" valign="top">
-              <table cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+              <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%;">
                 <tr>
                   <td style="padding: 0 0 8px 0;">
                     <div style="font-size: 16px; font-weight: bold; color: ${primary}; margin: 0 0 1px 0; line-height: 1.2;">${personal_info.name}</div>
@@ -315,10 +297,10 @@ export default function SignatureEditor({ initialData }: SignatureEditorProps) {
                     </table>
                   </td>
                 </tr>
-                ${logoHtml ? `
+                ${bottomRowHtml ? `
                 <tr>
-                  <td style="padding-top: 12px;">
-                    ${logoHtml}
+                  <td style="padding: 0;">
+                    ${bottomRowHtml}
                   </td>
                 </tr>` : ''}
               </table>
