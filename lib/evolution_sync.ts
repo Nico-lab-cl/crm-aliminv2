@@ -308,7 +308,26 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
     let sinceTimestamp: Date | null = null;
     
     if (hoursBack) {
-      sinceTimestamp = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+      let lastMsgForJid: Date | null = null;
+      if (jid) {
+        // Optimización: si ya tenemos mensajes locales para este jid, sincronizamos solo desde el último
+        const lastLocalRes = await queryMarketing(`
+          SELECT timestamp FROM whatsapp_messages 
+          WHERE remote_jid = $1 OR remote_jid = $2
+          ORDER BY timestamp DESC LIMIT 1
+        `, [jid, jid.replace('@s.whatsapp.net', '@lid')]);
+        
+        if (lastLocalRes.rows.length > 0) {
+          lastMsgForJid = new Date(lastLocalRes.rows[0].timestamp);
+        }
+      }
+
+      if (lastMsgForJid) {
+        // Sincronizar desde el último mensaje local menos 1 hora por seguridad
+        sinceTimestamp = new Date(lastMsgForJid.getTime() - 60 * 60 * 1000);
+      } else {
+        sinceTimestamp = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+      }
     } else {
       // Buscar la fecha del último mensaje sincronizado en nuestro CRM
       const lastMsgRes = await queryMarketing(`
@@ -393,30 +412,29 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
       }
     }
 
-    // Para los JIDs que no tienen mapeo en whatsapp_messages, buscar en la DB del CRM
-    for (const remoteJid of uniqueJids) {
-      if (jidToLeadIdMap.has(remoteJid)) continue;
+    // Para los JIDs que no tienen mapeo en whatsapp_messages, buscar en la DB del CRM de forma masiva
+    const unmappedJids = uniqueJids.filter(jid => !jidToLeadIdMap.has(jid));
+    if (unmappedJids.length > 0) {
+      try {
+        const leadsRes = await queryMain(`
+          SELECT id, phone FROM "Lead" 
+          WHERE phone IS NOT NULL 
+            AND LENGTH(REGEXP_REPLACE(phone, '[^0-9]', '', 'g')) >= 7
+        `);
 
-      const phoneDigits = remoteJid.split('@')[0].replace(/\D/g, '');
-      if (phoneDigits) {
-        try {
-          const matchRes = await queryMain(`
-            SELECT id FROM "Lead" 
-            WHERE "phone" IS NOT NULL 
-              AND LENGTH(REGEXP_REPLACE("phone", '[^0-9]', '', 'g')) >= 7
-              AND (
-                REGEXP_REPLACE("phone", '[^0-9]', '', 'g') = $1
-                OR $1 LIKE '%' || REGEXP_REPLACE("phone", '[^0-9]', '', 'g')
-              )
-            LIMIT 1
-          `, [phoneDigits]);
-
-          if (matchRes.rows.length > 0) {
-            jidToLeadIdMap.set(remoteJid, matchRes.rows[0].id);
+        for (const lead of leadsRes.rows) {
+          const cleanLeadPhone = lead.phone.replace(/\D/g, '');
+          for (const jid of unmappedJids) {
+            if (jidToLeadIdMap.has(jid)) continue;
+            
+            const jidPhone = jid.split('@')[0].replace(/\D/g, '');
+            if (cleanLeadPhone && jidPhone && (cleanLeadPhone === jidPhone || jidPhone.endsWith(cleanLeadPhone))) {
+              jidToLeadIdMap.set(jid, lead.id);
+            }
           }
-        } catch (e) {
-          console.warn(`Error querying lead for phone ${phoneDigits}:`, e);
         }
+      } catch (e) {
+        console.warn('Error in batch lead matching during sync:', e);
       }
     }
 

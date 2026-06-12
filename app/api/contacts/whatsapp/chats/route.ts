@@ -39,8 +39,11 @@ export async function GET() {
         console.log('[WhatsApp API Chats] Tabla local vacía. Realizando sincronización inicial de los últimos 180 días...');
         await syncEvolutionChats(undefined, 4320); // 180 días (6 meses)
       } else {
-        console.log('[WhatsApp API Chats] Sincronizando chats incrementalmente...');
-        await syncEvolutionChats(undefined, 24); // Sincroniza las últimas 24 horas en segundo plano
+        console.log('[WhatsApp API Chats] Sincronizando chats incrementalmente en segundo plano...');
+        // Ejecutar en segundo plano sin await para responder de inmediato
+        syncEvolutionChats(undefined, 24).catch(err => {
+          console.error('[WhatsApp API Chats] Error en sincronización en segundo plano:', err);
+        });
       }
     } catch (e) {
       console.warn('[WhatsApp API Chats] Error en la sincronización en segundo plano de Evolution API, mostrando datos offline:', (e as Error).message);
@@ -68,6 +71,26 @@ export async function GET() {
 
     // 4. Mapear nombres de Leads a los chats vinculados
     const chatsList = [];
+    const leadIds = rawChats.map(c => c.lead_id).filter(Boolean);
+    const leadMap = new Map<string, any>();
+
+    if (leadIds.length > 0) {
+      try {
+        const leadsRes = await queryMain(`
+          SELECT l.id, l."firstName", l."lastName", l.phone, l.email, u.name as "assignedAdvisor"
+          FROM "Lead" l
+          LEFT JOIN "User" u ON l."assignedToId" = u.id
+          WHERE l.id = ANY($1)
+        `, [leadIds]);
+
+        for (const row of leadsRes.rows) {
+          leadMap.set(row.id, row);
+        }
+      } catch (e) {
+        console.warn('[WhatsApp API Chats] Error al realizar batch query de Leads:', (e as Error).message);
+      }
+    }
+
     for (const chat of rawChats) {
       let leadName = null;
       let email = null;
@@ -75,27 +98,14 @@ export async function GET() {
       let leadAdvisorName = null;
       const phone = chat.remote_jid.split('@')[0].replace(/\D/g, '');
 
-      if (chat.lead_id) {
-        try {
-          const leadRes = await queryMain(`
-            SELECT l.*, u.name as "assignedAdvisor"
-            FROM "Lead" l
-            LEFT JOIN "User" u ON l."assignedToId" = u.id
-            WHERE l.id = $1
-          `, [chat.lead_id]);
-
-          if (leadRes.rows.length > 0) {
-            const row = leadRes.rows[0];
-            const first = row.firstName || row.FirstName || row.firstname || '';
-            const last = row.lastName || row.LastName || row.lastname || '';
-            leadName = `${first} ${last}`.trim();
-            email = row.email || row.Email || null;
-            leadPhone = row.phone || row.Phone || null;
-            leadAdvisorName = row.assignedAdvisor || null;
-          }
-        } catch (e) {
-          console.warn(`Error al consultar datos de Lead para ID ${chat.lead_id}:`, (e as Error).message);
-        }
+      if (chat.lead_id && leadMap.has(chat.lead_id)) {
+        const row = leadMap.get(chat.lead_id);
+        const first = row.firstName || row.FirstName || row.firstname || '';
+        const last = row.lastName || row.LastName || row.lastname || '';
+        leadName = `${first} ${last}`.trim();
+        email = row.email || row.Email || null;
+        leadPhone = row.phone || row.Phone || null;
+        leadAdvisorName = row.assignedAdvisor || null;
       }
 
       const displayPhone = leadPhone ? leadPhone.replace(/\D/g, '') : phone;

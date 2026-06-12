@@ -336,11 +336,10 @@ export default function WhatsAppInboxPage() {
     }
   };
 
-  // Obtener lista única de asesores presentes en los chats y en el CRM
-  const advisorsList = Array.from(new Set([
-    ...advisors.map(a => a.name),
-    ...chats.map(c => c.advisor_name).filter(Boolean)
-  ]));
+  // Obtener lista única de asesores presentes en los chats de Evolution
+  const advisorsList = Array.from(new Set(
+    chats.map(c => c.advisor_name).filter(Boolean)
+  ));
 
   // Filtrar conversaciones de la izquierda
   const filteredChats = chats.filter(c => {
