@@ -35,15 +35,7 @@ export async function GET(request: Request) {
       });
     }
 
-    // 2. Intentar sincronizar de forma incremental para este JID específico
-    try {
-      console.log(`[WhatsApp API Messages] Sincronizando por demanda para JID: ${jid}...`);
-      await syncEvolutionChats(jid, 4320); // Buscar últimos 180 días
-    } catch (e) {
-      console.warn(`[WhatsApp API Messages] Falló la sincronización en segundo plano para ${jid}:`, (e as Error).message);
-    }
-
-    // 3. Consultar los mensajes almacenados
+    // 2. Consultar los mensajes almacenados PRIMERO para responder de inmediato
     const query = `
       SELECT id, message_id, lead_id, remote_jid, from_me, body, timestamp, instance_id, advisor_name
       FROM whatsapp_messages
@@ -52,6 +44,13 @@ export async function GET(request: Request) {
     `;
 
     const res = await queryMarketing(query, [jid]);
+
+    // 3. Ejecutar sincronización incremental en SEGUNDO PLANO (sin bloquear la respuesta)
+    // Solo sincroniza las últimas 24 horas para este JID específico
+    syncEvolutionChats(jid, 24).catch(e => {
+      console.warn(`[WhatsApp API Messages] Error en sincronización en segundo plano para ${jid}:`, (e as Error).message);
+    });
+
     return NextResponse.json({
       success: true,
       messages: res.rows,

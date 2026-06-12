@@ -300,6 +300,19 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
     const schema = await introspectEvolutionSchema(pool);
     console.log('✓ Esquema de Evolution API introspectado:', schema);
 
+    // Crear/verificar índices para acelerar las búsquedas por demanda y JID
+    try {
+      await client.query(`CREATE INDEX IF NOT EXISTS "idx_message_instanceId" ON "${schema.tableName}" ("instanceId")`);
+      await client.query(`CREATE INDEX IF NOT EXISTS "idx_message_timestamp" ON "${schema.tableName}" ("${schema.timestampCol}")`);
+      if (schema.hasKeyCol) {
+        await client.query(`CREATE INDEX IF NOT EXISTS "idx_message_key_remoteJid" ON "${schema.tableName}" (("key"->>'remoteJid'))`);
+        await client.query(`CREATE INDEX IF NOT EXISTS "idx_message_key_remoteJidAlt" ON "${schema.tableName}" (("key"->>'remoteJidAlt'))`);
+      }
+      console.log('✓ Índices de rendimiento verificados/creados en Evolution DB.');
+    } catch (e) {
+      console.warn('Advertencia al crear índices en Evolution DB (permisos insuficientes o base de datos de solo lectura):', (e as Error).message);
+    }
+
     // 2. Obtener mapa de instancias
     const instancesMap = await getAdvisorInstancesMap(pool);
     console.log('✓ Instancias encontradas en Evolution API:', Array.from(instancesMap.entries()));
@@ -378,7 +391,7 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
         ${schema.pushNameCol ? escapeIdentifier(schema.pushNameCol) : 'NULL'} as push_name
       FROM "${schema.tableName}"
       WHERE ${selectClauses.join(' AND ')}
-      ORDER BY ${escapeIdentifier(schema.timestampCol)} ASC
+      ORDER BY ${escapeIdentifier(schema.timestampCol)} DESC
       LIMIT ${limit}
     `;
 
@@ -390,9 +403,12 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
       return { syncedCount: 0 };
     }
 
+    // Reversar las filas para que se procesen/inserten en orden cronológico (ASC)
+    const rows = [...res.rows].reverse();
+
     // 5. Mapear JIDs a Lead IDs del CRM
     // Para hacerlo rápido, primero extraemos todos los JIDs únicos de los mensajes recuperados
-    const uniqueJids = Array.from(new Set(res.rows.map(r => r.remote_jid)));
+    const uniqueJids = Array.from(new Set(rows.map(r => r.remote_jid)));
     const jidToLeadIdMap = new Map<string, string>();
 
     // Buscar si ya existe una vinculación en los mensajes locales
@@ -440,7 +456,7 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
 
     // 6. Insertar los mensajes en el CRM
     let insertedCount = 0;
-    for (const row of res.rows) {
+    for (const row of rows) {
       const messageId = row.id;
       const leadId = jidToLeadIdMap.get(row.remote_jid) || null;
       const fromMe = Boolean(row.from_me);
@@ -635,6 +651,27 @@ export async function migrateLidsToRealJids() {
     console.error('[LID Migration] Error durante la migración de LIDs:', err);
   } finally {
     if (client) client.release();
+  }
+}
+
+/**
+ * Obtiene la lista única de asesores con instancias registradas en Evolution API.
+ */
+export async function getEvolutionAdvisors(): Promise<string[]> {
+  try {
+    const pool = getEvolutionPool();
+    const instancesMap = await getAdvisorInstancesMap(pool);
+    const advisors = new Set<string>();
+    for (const name of Array.from(instancesMap.values())) {
+      const advName = getAdvisorNameFromInstance(name);
+      if (advName && advName !== 'WhatsApp Sistema') {
+        advisors.add(advName);
+      }
+    }
+    return Array.from(advisors);
+  } catch (e) {
+    console.error('Error al obtener asesores de Evolution DB:', e);
+    return [];
   }
 }
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { queryMain, queryMarketing } from '@/lib/db';
-import { syncEvolutionChats } from '@/lib/evolution_sync';
+import { syncEvolutionChats, getEvolutionAdvisors } from '@/lib/evolution_sync';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,9 +129,20 @@ export async function GET() {
     // Ordenar cronológicamente (más recientes primero)
     chatsList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
+    // Obtener lista de asesores directamente de Evolution API (todas las instancias)
+    let advisors: string[] = [];
+    try {
+      advisors = await getEvolutionAdvisors();
+    } catch (e) {
+      console.warn('[WhatsApp API Chats] Error al obtener asesores de Evolution:', (e as Error).message);
+      // Fallback: extraer asesores únicos de los chats
+      advisors = Array.from(new Set(chatsList.map(c => c.advisor_name).filter(n => n && n !== 'WhatsApp Sistema')));
+    }
+
     return NextResponse.json({
       success: true,
       chats: chatsList,
+      advisors,
       isMock: false
     });
 

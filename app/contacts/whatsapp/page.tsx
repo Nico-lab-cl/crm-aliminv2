@@ -74,7 +74,7 @@ export default function WhatsAppInboxPage() {
   const [selectedStatus, setSelectedStatus] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [advisors, setAdvisors] = useState<Array<{ id: string; name: string }>>([]);
+  const [advisorsList, setAdvisorsList] = useState<string[]>([]);
 
   // Modales
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -122,6 +122,14 @@ export default function WhatsAppInboxPage() {
       if (res.ok) {
         const data = await res.json();
         setChats(data.chats || []);
+        // Actualizar lista de asesores desde Evolution API
+        if (data.advisors && data.advisors.length > 0) {
+          setAdvisorsList(data.advisors);
+        } else {
+          // Fallback: extraer de los chats cargados
+          const fromChats = Array.from(new Set((data.chats || []).map((c: Chat) => c.advisor_name).filter((n: string) => n && n !== 'WhatsApp Sistema')));
+          setAdvisorsList(fromChats as string[]);
+        }
       }
     } catch (e) {
       console.error('Error fetching chats:', e);
@@ -146,21 +154,7 @@ export default function WhatsAppInboxPage() {
     }
   }, []);
 
-  // Cargar asesores al iniciar
-  useEffect(() => {
-    async function loadAdvisors() {
-      try {
-        const res = await fetch('/api/advisors');
-        if (res.ok) {
-          const data = await res.json();
-          setAdvisors(data.advisors || []);
-        }
-      } catch (e) {
-        console.error('Error loading advisors:', e);
-      }
-    }
-    loadAdvisors();
-  }, []);
+  // Los asesores se cargan junto con los chats desde la Evolution API
 
   // Cargar chats al iniciar
   useEffect(() => {
@@ -336,10 +330,7 @@ export default function WhatsAppInboxPage() {
     }
   };
 
-  // Obtener lista única de asesores presentes en los chats de Evolution
-  const advisorsList = Array.from(new Set(
-    chats.map(c => c.advisor_name).filter(Boolean)
-  ));
+  // advisorsList ya viene del estado actualizado por fetchChats()
 
   // Filtrar conversaciones de la izquierda
   const filteredChats = chats.filter(c => {
