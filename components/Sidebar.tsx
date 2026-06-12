@@ -33,7 +33,8 @@ const navItems = [
     subItems: [
       { name: 'Campañas', href: '/campaigns' },
       { name: 'Reglas de Automatización', href: '/settings/meta-automations' },
-      { name: 'Métricas de Campañas', href: '/campaigns/metrics' }
+      { name: 'Métricas de Campañas', href: '/campaigns/metrics' },
+      { name: 'Firmas de Email 🖋️', href: '/campaigns/signatures' }
     ]
   },
   { name: 'Mapeo Web', href: '/mapeo-web', icon: Globe },
