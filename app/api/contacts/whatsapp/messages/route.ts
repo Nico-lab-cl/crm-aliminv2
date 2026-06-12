@@ -85,7 +85,7 @@ function getMockMessagesForJid(jid: string) {
         body: 'Hola, me interesa recibir más información sobre el proyecto Lomas del Mar.',
         timestamp: new Date(baseDate.getTime() - 1000 * 60 * 60 * 24).toISOString(),
         instance_id: 'orlando-wa',
-        advisor_name: 'Orlando Castillo'
+        advisor_name: 'Orlando Costa'
       },
       {
         id: 2,
@@ -96,7 +96,7 @@ function getMockMessagesForJid(jid: string) {
         body: '¡Hola José! Qué gusto saludarte. Claro que sí, con mucho gusto. ¿Te gustaría agendar una llamada breve hoy para contarte más detalles sobre los lotes disponibles?',
         timestamp: new Date(baseDate.getTime() - 1000 * 60 * 60 * 23.5).toISOString(),
         instance_id: 'orlando-wa',
-        advisor_name: 'Orlando Castillo'
+        advisor_name: 'Orlando Costa'
       },
       {
         id: 3,
@@ -107,7 +107,7 @@ function getMockMessagesForJid(jid: string) {
         body: 'Sí, por favor. A las 16:00 horas me queda bien.',
         timestamp: new Date(baseDate.getTime() - 1000 * 60 * 60 * 23).toISOString(),
         instance_id: 'orlando-wa',
-        advisor_name: 'Orlando Castillo'
+        advisor_name: 'Orlando Costa'
       },
       {
         id: 4,
@@ -118,7 +118,7 @@ function getMockMessagesForJid(jid: string) {
         body: 'Excelente José, te llamo a esa hora. ¡Saludos!',
         timestamp: new Date(baseDate.getTime() - 1000 * 60 * 60 * 22.8).toISOString(),
         instance_id: 'orlando-wa',
-        advisor_name: 'Orlando Castillo'
+        advisor_name: 'Orlando Costa'
       }
     ];
   } else if (phone === '56976543210') {
@@ -132,7 +132,7 @@ function getMockMessagesForJid(jid: string) {
         body: 'Hola, vi un anuncio en Instagram sobre terrenos de Arena y Sol.',
         timestamp: new Date(baseDate.getTime() - 1000 * 60 * 60 * 48).toISOString(),
         instance_id: 'marcela-wa',
-        advisor_name: 'Marcela Espinoza'
+        advisor_name: 'Marcela Escobar'
       },
       {
         id: 11,
@@ -143,7 +143,21 @@ function getMockMessagesForJid(jid: string) {
         body: 'Hola, ¡muy buenas tardes! Qué gusto que nos contactes. El proyecto Arena y Sol se encuentra ubicado a pocos minutos de la costa. ¿Te gustaría agendar una visita a terreno?',
         timestamp: new Date(baseDate.getTime() - 1000 * 60 * 60 * 47).toISOString(),
         instance_id: 'marcela-wa',
-        advisor_name: 'Marcela Espinoza'
+        advisor_name: 'Marcela Escobar'
+      }
+    ];
+  } else if (phone === '56965432109') {
+    return [
+      {
+        id: 200,
+        message_id: 'msg-mock-200',
+        lead_id: '3',
+        remote_jid: jid,
+        from_me: false,
+        body: 'Hola Bárbara, ya revisé los planos y me interesa coordinar la visita.',
+        timestamp: new Date(baseDate.getTime() - 1000 * 60 * 15).toISOString(),
+        instance_id: 'barbara-wa',
+        advisor_name: 'Barbara Arias'
       }
     ];
   } else {

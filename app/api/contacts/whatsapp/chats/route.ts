@@ -192,7 +192,7 @@ function getMockChats() {
       body: 'Excelente José, te llamo a esa hora. ¡Saludos!',
       timestamp: new Date(baseDate.getTime() - 1000 * 60 * 30).toISOString(), // Hace 30 min
       from_me: true,
-      advisor_name: 'Orlando Castillo',
+      advisor_name: 'Orlando Costa',
       is_crm_contact: true
     },
     {
@@ -206,7 +206,21 @@ function getMockChats() {
       body: 'Hola, ¡muy buenas tardes! Qué gusto que nos contactes. El proyecto Arena y Sol se encuentra ubicado a pocos minutos de la costa. ¿Te gustaría agendar una visita a terreno?',
       timestamp: new Date(baseDate.getTime() - 1000 * 60 * 120).toISOString(), // Hace 2 horas
       from_me: true,
-      advisor_name: 'Marcela Espinoza',
+      advisor_name: 'Marcela Escobar',
+      is_crm_contact: true
+    },
+    {
+      id: 4,
+      message_id: 'msg-mock-200',
+      lead_id: '3',
+      remote_jid: '56965432109@s.whatsapp.net',
+      phone: '56965432109',
+      lead_name: 'Carlos Valenzuela',
+      email: 'carlos.v@outlook.com',
+      body: 'Hola Bárbara, ya revisé los planos y me interesa coordinar la visita.',
+      timestamp: new Date(baseDate.getTime() - 1000 * 60 * 15).toISOString(), // Hace 15 min
+      from_me: false,
+      advisor_name: 'Barbara Arias',
       is_crm_contact: true
     },
     {
