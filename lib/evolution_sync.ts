@@ -402,64 +402,71 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
     // Caso 2: Sincronización general (sin JID). Iteramos por cada instancia para evitar hambruna.
     else if (instancesMap.size > 0) {
       for (const [instanceId, instanceName] of Array.from(instancesMap.entries())) {
-        let sinceTimestamp: Date | null = null;
-        
-        if (hoursBack) {
-          sinceTimestamp = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
-        } else {
-          // Buscar el último mensaje de esta instancia en nuestra DB local
+        try {
+          let sinceTimestamp: Date | null = null;
+          
+          // Buscar el último mensaje de esta instancia en nuestra DB local para ver si ya se sincronizó antes
           const lastMsgRes = await queryMarketing(`
             SELECT timestamp FROM whatsapp_messages 
             WHERE instance_id = $1
             ORDER BY timestamp DESC LIMIT 1
           `, [instanceId]);
           
-          if (lastMsgRes.rows.length > 0) {
+          const hasLocalMessages = lastMsgRes.rows.length > 0;
+
+          if (hoursBack && hasLocalMessages) {
+            // Si ya tiene mensajes y se pidió un rango corto, respetamos el rango corto (sincronización incremental rápida)
+            sinceTimestamp = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+          } else if (hasLocalMessages) {
+            // Si ya tiene mensajes pero no hay un rango corto, sincronizamos desde el último mensaje local
             sinceTimestamp = new Date(lastMsgRes.rows[0].timestamp);
           } else {
-            // Si nunca se ha sincronizado esta instancia, por defecto sincronizamos los últimos 30 días
-            sinceTimestamp = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+            // Si nunca se ha sincronizado esta instancia (es nueva), realizamos una sincronización histórica de 180 días
+            console.log(`[Sync Instance ${instanceName}] Instancia nueva detectada en sync. Realizando sincronización histórica de los últimos 180 días...`);
+            sinceTimestamp = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
           }
-        }
 
-        const selectClauses = ['1=1'];
-        const queryParams: unknown[] = [];
+          const selectClauses = ['1=1'];
+          const queryParams: unknown[] = [];
 
-        queryParams.push(instanceId);
-        selectClauses.push(`${escapeIdentifier(schema.instanceCol)} = $${queryParams.length}`);
+          queryParams.push(instanceId);
+          selectClauses.push(`${escapeIdentifier(schema.instanceCol)} = $${queryParams.length}`);
 
-        if (sinceTimestamp) {
-          queryParams.push(sinceTimestamp);
-          if (isBigIntType) {
-            const secs = Math.floor(sinceTimestamp.getTime() / 1000);
-            queryParams[queryParams.length - 1] = secs;
+          if (sinceTimestamp) {
+            queryParams.push(sinceTimestamp);
+            if (isBigIntType) {
+              const secs = Math.floor(sinceTimestamp.getTime() / 1000);
+              queryParams[queryParams.length - 1] = secs;
+            }
+            selectClauses.push(`${escapeIdentifier(schema.timestampCol)} > $${queryParams.length}`);
           }
-          selectClauses.push(`${escapeIdentifier(schema.timestampCol)} > $${queryParams.length}`);
-        }
 
-        // Límite de 1000 mensajes por instancia para no saturar
-        const queryText = `
-          SELECT 
-            ${escapeIdentifier(schema.idCol)} as id,
-            ${escapeIdentifier(schema.jidCol)} as remote_jid,
-            ${escapeIdentifier(schema.fromMeCol)} as from_me,
-            ${escapeIdentifier(schema.contentCol)} as content,
-            ${escapeIdentifier(schema.timestampCol)} as raw_timestamp,
-            ${escapeIdentifier(schema.instanceCol)} as instance_id,
-            ${schema.pushNameCol ? escapeIdentifier(schema.pushNameCol) : 'NULL'} as push_name
-          FROM "${schema.tableName}"
-          WHERE ${selectClauses.join(' AND ')}
-          ORDER BY ${escapeIdentifier(schema.timestampCol)} DESC
-          LIMIT 1000
-        `;
+          // Límite de 1000 mensajes por instancia para no saturar
+          const queryText = `
+            SELECT 
+              ${escapeIdentifier(schema.idCol)} as id,
+              ${escapeIdentifier(schema.jidCol)} as remote_jid,
+              ${escapeIdentifier(schema.fromMeCol)} as from_me,
+              ${escapeIdentifier(schema.contentCol)} as content,
+              ${escapeIdentifier(schema.timestampCol)} as raw_timestamp,
+              ${escapeIdentifier(schema.instanceCol)} as instance_id,
+              ${schema.pushNameCol ? escapeIdentifier(schema.pushNameCol) : 'NULL'} as push_name
+            FROM "${schema.tableName}"
+            WHERE ${selectClauses.join(' AND ')}
+            ORDER BY ${escapeIdentifier(schema.timestampCol)} DESC
+            LIMIT 1000
+          `;
 
-        console.log(`[Sync Instance ${instanceName}] Consultando Evolution DB: ${queryText} con parámetros ${queryParams}`);
-        const res = await client.query(queryText, queryParams);
-        console.log(`[Sync Instance ${instanceName}] Se encontraron ${res.rows.length} mensajes.`);
+          console.log(`[Sync Instance ${instanceName}] Consultando Evolution DB: ${queryText} con parámetros ${queryParams}`);
+          const res = await client.query(queryText, queryParams);
+          console.log(`[Sync Instance ${instanceName}] Se encontraron ${res.rows.length} mensajes.`);
 
-        if (res.rows.length > 0) {
-          const syncedCount = await processAndInsertMessages(res.rows, instancesMap);
-          totalSynced += syncedCount;
+          if (res.rows.length > 0) {
+            const syncedCount = await processAndInsertMessages(res.rows, instancesMap);
+            totalSynced += syncedCount;
+          }
+        } catch (instanceError) {
+          console.error(`[Sync Instance ${instanceName}] Error durante la sincronización de esta instancia:`, instanceError);
         }
       }
     } 
