@@ -401,7 +401,7 @@ export async function syncEvolutionChats(jid?: string, hoursBack?: number) {
     } 
     // Caso 2: Sincronización general (sin JID). Iteramos por cada instancia para evitar hambruna.
     else if (instancesMap.size > 0) {
-      for (const [instanceId, instanceName] of instancesMap.entries()) {
+      for (const [instanceId, instanceName] of Array.from(instancesMap.entries())) {
         let sinceTimestamp: Date | null = null;
         
         if (hoursBack) {

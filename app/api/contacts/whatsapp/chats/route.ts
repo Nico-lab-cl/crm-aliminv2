@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { syncEvolutionChats, getEvolutionAdvisors, normalizeAdvisorName } from '@/lib/evolution_sync';
+import { queryMain, queryMarketing } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,7 +71,7 @@ export async function GET() {
 
     // 4. Mapear nombres de Leads a los chats vinculados
     const chatsList = [];
-    const leadIds = rawChats.map(c => c.lead_id).filter(Boolean);
+    const leadIds = rawChats.map((c: any) => c.lead_id).filter(Boolean);
     const leadMap = new Map<string, any>();
 
     if (leadIds.length > 0) {

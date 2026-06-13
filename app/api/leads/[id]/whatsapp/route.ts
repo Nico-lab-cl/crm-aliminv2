@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { syncEvolutionChats, normalizeAdvisorName } from '@/lib/evolution_sync';
+import { queryMain, queryMarketing } from '@/lib/db';
 
 interface WhatsappMessage {
   id: number;

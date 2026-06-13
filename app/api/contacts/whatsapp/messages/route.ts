@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { syncEvolutionChats, normalizeAdvisorName } from '@/lib/evolution_sync';
+import { queryMain, queryMarketing } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,7 +51,7 @@ export async function GET(request: Request) {
       console.warn(`[WhatsApp API Messages] Error en sincronización en segundo plano para ${jid}:`, (e as Error).message);
     });
 
-    const normalizedMessages = res.rows.map(m => ({
+    const normalizedMessages = res.rows.map((m: any) => ({
       ...m,
       advisor_name: normalizeAdvisorName(m.advisor_name)
     }));
