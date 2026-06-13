@@ -41,11 +41,6 @@ async function migrate() {
     name: 'Localhost crm',
     url: 'postgresql://nicolas:nicolas@localhost:5432/crm?sslmode=disable'
   });
-  
-  connections.push({
-    name: 'Production Fallback (aliminspa)',
-    url: 'postgresql://nicolas:zampullido20@84.247.162.186:5433/aliminspa?sslmode=disable'
-  });
 
   // Load SQL
   let sqlContent = '';

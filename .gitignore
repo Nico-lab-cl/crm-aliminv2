@@ -34,3 +34,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local scratch and debug files
+/scratch/
+scratch_*
+test_conn_*

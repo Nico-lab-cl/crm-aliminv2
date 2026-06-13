@@ -1,7 +1,7 @@
 const { Client } = require('pg');
 
 async function main() {
-  const connectionString = 'postgresql://nicolas:zampullido20@84.247.162.186:5433/aliminspa?sslmode=disable';
+  const connectionString = process.env.MAIN_DB_URL || 'postgresql://nicolas:nicolas@localhost:5432/crm?sslmode=disable';
   const client = new Client({ connectionString });
 
   try {
