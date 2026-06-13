@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
 import { queryMain, queryMarketing } from '@/lib/db';
-import { syncEvolutionChats } from '@/lib/evolution_sync';
 import { Pool } from 'pg';
 
-// We get the Evolution DB URL exactly how the app does
 const evolutionDbUrl = process.env.EVOLUTION_DB_URL || 'postgres://postgres:c886f4677c481efad228@n8n_evolution-api-db:5432/n8n?sslmode=disable';
 
 export const dynamic = 'force-dynamic';
