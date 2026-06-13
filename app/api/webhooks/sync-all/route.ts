@@ -1,105 +1,74 @@
 import { NextResponse } from 'next/server';
 import { queryMain, queryMarketing } from '@/lib/db';
-import { normalizeAdvisorName, getEvolutionAdvisors } from '@/lib/evolution_sync';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // 1. Consultar las conversaciones únicas más recientes
-    const query = `
-      SELECT DISTINCT ON (remote_jid) 
-        id,
-        message_id,
-        lead_id,
-        remote_jid,
-        from_me,
-        body,
-        timestamp,
-        instance_id,
-        advisor_name,
-        push_name
+    // 1. Obtener todos los JIDs distintos de mensajes donde el advisor_name de la DB es Marcela Escobar
+    const distinctJidsRes = await queryMarketing(`
+      SELECT remote_jid, COUNT(*) as message_count, MAX(timestamp) as last_msg
       FROM whatsapp_messages
-      ORDER BY remote_jid, timestamp DESC
-    `;
+      WHERE advisor_name = 'Marcela Escobar'
+      GROUP BY remote_jid
+      ORDER BY message_count DESC
+    `);
+    const jids = distinctJidsRes.rows;
 
-    const res = await queryMarketing(query);
-    const rawChats = res.rows;
+    const results = [];
 
-    // 2. Mapear nombres de Leads a los chats vinculados
-    const chatsList = [];
-    const leadIds = rawChats.map((c: any) => c.lead_id).filter(Boolean);
-    const leadMap = new Map<string, any>();
+    // 2. Para los primeros 30 JIDs, investigar a qué leads corresponden y a quién están asignados
+    for (const row of jids.slice(0, 30)) {
+      const remoteJid = row.remote_jid;
+      
+      // Ver el último mensaje de este JID
+      const lastMsgRes = await queryMarketing(`
+        SELECT lead_id, advisor_name, body, from_me, timestamp, instance_id
+        FROM whatsapp_messages
+        WHERE remote_jid = $1
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `, [remoteJid]);
+      
+      const lastMsg = lastMsgRes.rows[0];
 
-    if (leadIds.length > 0) {
-      try {
-        const leadsRes = await queryMain(`
-          SELECT l.id, l."firstName", l."lastName", l.phone, l.email, u.name as "assignedAdvisor"
+      let leadInfo = null;
+      if (lastMsg && lastMsg.lead_id) {
+        const leadRes = await queryMain(`
+          SELECT l.id, l."firstName", l."lastName", l.phone, l."assignedToId", u.name as assigned_advisor_name
           FROM "Lead" l
           LEFT JOIN "User" u ON l."assignedToId" = u.id
-          WHERE l.id = ANY($1)
-        `, [leadIds]);
-
-        for (const row of leadsRes.rows) {
-          leadMap.set(row.id, row);
+          WHERE l.id = $1
+        `, [lastMsg.lead_id]);
+        if (leadRes.rows.length > 0) {
+          leadInfo = leadRes.rows[0];
         }
-      } catch (e) {
-        console.warn('[WhatsApp API Chats] Error al realizar batch query de Leads:', (e as Error).message);
-      }
-    }
-
-    for (const chat of rawChats) {
-      let leadName = null;
-      let email = null;
-      let leadPhone = null;
-      let leadAdvisorName = null;
-      const phone = chat.remote_jid.split('@')[0].replace(/\D/g, '');
-
-      if (chat.lead_id && leadMap.has(chat.lead_id)) {
-        const row = leadMap.get(chat.lead_id);
-        const first = row.firstName || row.FirstName || row.firstname || '';
-        const last = row.lastName || row.LastName || row.lastname || '';
-        leadName = `${first} ${last}`.trim();
-        email = row.email || row.Email || null;
-        leadPhone = row.phone || row.Phone || null;
-        leadAdvisorName = row.assignedAdvisor || null;
       }
 
-      const displayPhone = leadPhone ? leadPhone.replace(/\D/g, '') : phone;
-
-      chatsList.push({
-        id: chat.id,
-        message_id: chat.message_id,
-        lead_id: chat.lead_id,
-        remote_jid: chat.remote_jid,
-        phone: displayPhone,
-        lead_name: leadName || chat.push_name || `+${phone}`,
-        email,
-        body: chat.body,
-        timestamp: chat.timestamp,
-        from_me: chat.from_me,
-        advisor_name: normalizeAdvisorName(leadAdvisorName || chat.advisor_name),
-        is_crm_contact: !!chat.lead_id
+      results.push({
+        remote_jid: remoteJid,
+        message_count: parseInt(row.message_count),
+        last_msg_time: row.last_msg,
+        db_message_advisor: lastMsg ? lastMsg.advisor_name : null,
+        lead_id: lastMsg ? lastMsg.lead_id : null,
+        lead_info: leadInfo
       });
     }
 
-    // Ordenar cronológicamente (más recientes primero)
-    chatsList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-    // Obtener lista de asesores directamente de Evolution API (todas las instancias)
-    let advisors: string[] = [];
-    try {
-      advisors = await getEvolutionAdvisors();
-    } catch (e) {
-      console.warn('[WhatsApp API Chats] Error al obtener asesores de Evolution:', (e as Error).message);
-      advisors = Array.from(new Set(chatsList.map(c => c.advisor_name).filter(n => n && n !== 'WhatsApp Sistema')));
-    }
+    // 3. También ver los primeros 10 mensajes generales de Marcela en la base de datos
+    const sampleMsgs = await queryMarketing(`
+      SELECT id, remote_jid, lead_id, from_me, body, timestamp, advisor_name, instance_id
+      FROM whatsapp_messages
+      WHERE advisor_name = 'Marcela Escobar'
+      ORDER BY timestamp DESC
+      LIMIT 10
+    `);
 
     return NextResponse.json({
       success: true,
-      chatsCount: chatsList.length,
-      advisors,
-      chats: chatsList
+      total_distinct_jids: jids.length,
+      distinct_jids_sample: results,
+      sample_messages: sampleMsgs.rows
     });
 
   } catch (error: any) {
