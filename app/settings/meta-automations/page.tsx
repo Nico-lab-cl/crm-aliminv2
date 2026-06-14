@@ -232,6 +232,7 @@ export default function MetaAutomationsPage() {
       name: rule.name,
       form_id: rule.form_id || null,
       segment_id: rule.segment_id || null,
+      webhook_url: rule.webhook_url || null,
       campaign_ids: ids,
       active: !rule.active
     };
@@ -611,7 +612,6 @@ export default function MetaAutomationsPage() {
                 </label>
                 <input 
                   type="url" 
-                  required
                   placeholder="https://n8n.aliminlomasdelmar.com/webhook/..."
                   className="w-full bg-[#f5f8fa] border border-[#cbd6e2] rounded-xl px-4 py-2.5 text-[#33475b] focus:ring-2 focus:ring-[#2d544c]/20 outline-none text-xs font-mono font-medium transition-all"
                   value={webhookUrl}

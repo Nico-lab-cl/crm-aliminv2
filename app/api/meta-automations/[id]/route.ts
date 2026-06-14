@@ -80,6 +80,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
 
     const campaignIdsJson = JSON.stringify(campaign_ids || []);
     const isActive = active !== undefined ? active : true;
+    const finalWebhookUrl = webhook_url !== undefined ? webhook_url : oldRule.webhook_url;
 
     // 2. Perform the update
     const query = `
@@ -88,7 +89,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
       WHERE id = $7
       RETURNING *
     `;
-    const queryParams = [name, form_id || null, segment_id || null, campaignIdsJson, isActive, webhook_url || null, id];
+    const queryParams = [name, form_id || null, segment_id || null, campaignIdsJson, isActive, finalWebhookUrl || null, id];
 
     const result = await queryMarketing(query, queryParams);
     const updatedRule = result.rows[0];
