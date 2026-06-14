@@ -51,9 +51,43 @@ export async function GET(request: Request) {
       console.warn(`[WhatsApp API Messages] Error en sincronización en segundo plano para ${jid}:`, (e as Error).message);
     });
 
+    // Buscar el asesor asignado al lead en el CRM para mostrarlo en el historial del chat
+    let leadAdvisorName = null;
+    try {
+      const firstWithLead = res.rows.find((m: any) => m.lead_id);
+      let leadRes;
+      if (firstWithLead) {
+        leadRes = await queryMain(`
+          SELECT l.id, u.name as "assignedAdvisor"
+          FROM "Lead" l
+          LEFT JOIN "User" u ON l."assignedToId" = u.id
+          WHERE l.id = $1
+        `, [firstWithLead.lead_id]);
+      } else {
+        const phone = jid.split('@')[0].replace(/\D/g, '');
+        leadRes = await queryMain(`
+          SELECT l.id, u.name as "assignedAdvisor"
+          FROM "Lead" l
+          LEFT JOIN "User" u ON l."assignedToId" = u.id
+          WHERE l.phone IS NOT NULL 
+            AND LENGTH(REGEXP_REPLACE(l.phone, '[^0-9]', '', 'g')) >= 7
+            AND (
+              REGEXP_REPLACE(l.phone, '[^0-9]', '', 'g') = $1
+              OR $1 LIKE '%' || REGEXP_REPLACE(l.phone, '[^0-9]', '', 'g')
+            )
+          LIMIT 1
+        `, [phone]);
+      }
+      if (leadRes && leadRes.rows.length > 0) {
+        leadAdvisorName = leadRes.rows[0].assignedAdvisor || null;
+      }
+    } catch (e) {
+      console.warn('[WhatsApp API Messages] Error al obtener asesor del lead:', e);
+    }
+
     const normalizedMessages = res.rows.map((m: any) => ({
       ...m,
-      advisor_name: normalizeAdvisorName(m.advisor_name)
+      advisor_name: normalizeAdvisorName(leadAdvisorName || m.advisor_name)
     }));
 
     return NextResponse.json({

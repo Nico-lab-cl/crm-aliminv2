@@ -49,6 +49,7 @@ export async function GET(
     // 2. Obtener los datos del lead en el CRM (teléfono y JID guardado localmente si existe)
     let phone = '';
     let jid = '';
+    let leadAdvisorName = null;
     
     try {
       // Intentar encontrar el remote_jid existente de los mensajes locales para este lead
@@ -57,10 +58,16 @@ export async function GET(
         jid = jidRes.rows[0].remote_jid;
       }
 
-      const leadRes = await queryMain('SELECT * FROM "Lead" WHERE id = $1', [id]);
+      const leadRes = await queryMain(`
+        SELECT l.*, u.name as "assignedAdvisor"
+        FROM "Lead" l
+        LEFT JOIN "User" u ON l."assignedToId" = u.id
+        WHERE l.id = $1
+      `, [id]);
       if (leadRes.rows.length > 0) {
         const lead = leadRes.rows[0];
         phone = lead.Phone || lead.phone || '';
+        leadAdvisorName = lead.assignedAdvisor || null;
         
         if (!jid && phone) {
           const cleanPhone = phone.replace(/\D/g, '');
@@ -110,7 +117,7 @@ export async function GET(
 
     const normalizedMessages = messages.map(m => ({
       ...m,
-      advisor_name: normalizeAdvisorName(m.advisor_name)
+      advisor_name: normalizeAdvisorName(leadAdvisorName || m.advisor_name)
     }));
 
     return NextResponse.json({
