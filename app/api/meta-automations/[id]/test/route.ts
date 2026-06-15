@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { queryMarketing } from '@/lib/db';
-import { dispatchLeadToWebhook } from '@/lib/automation_utils';
 
 interface RouteParams {
   params: {
@@ -34,7 +33,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       const campaignsRes = await queryMarketing(`
         SELECT id, title, subject, html_content, mjml_content 
         FROM campaigns 
-        WHERE id = ANY($1)
+        WHERE id = ANY($1::uuid[])
       `, [campaignIds]);
       campaigns = campaignsRes.rows;
     }
@@ -53,16 +52,88 @@ export async function POST(request: Request, { params }: RouteParams) {
       created_at: new Date().toISOString()
     };
 
-    // 4. Dispatch directly to webhook
-    const ok = await dispatchLeadToWebhook(leadObj, rule, campaigns);
-
-    if (ok) {
-      return NextResponse.json({ success: true, message: 'Prueba enviada directamente al webhook de la regla.' });
-    } else {
-      return NextResponse.json({ message: 'Error al enviar webhook de prueba' }, { status: 500 });
+    // 4. Dispatch directly to webhook in this route to catch details
+    let specialWebhookUrl = rule.webhook_url;
+    if (!specialWebhookUrl) {
+      specialWebhookUrl = process.env.N8N_WEBHOOK_URL || 'https://n8n.aliminlomasdelmar.com/webhook/451ea8a2-a6d4-4827-9c6f-375ba8adcdd8';
     }
+
+    const payload = {
+      lead: {
+        id: leadObj.id,
+        email: leadObj.email,
+        name: leadObj.firstname,
+        phone: leadObj.phone,
+        formid: leadObj.formid,
+        adname: leadObj.adname,
+        adid: leadObj.adid,
+        pie: leadObj.pie,
+        source: leadObj.source,
+        created_at: leadObj.created_at
+      },
+      automation: {
+        id: rule.id,
+        name: rule.name
+      },
+      campaigns: campaigns.map(c => ({
+        id: c.id,
+        title: c.title,
+        subject: c.subject,
+        html_content: c.html_content,
+        mjml_content: c.mjml_content
+      }))
+    };
+
+    let fetchStatus = 0;
+    let fetchStatusText = '';
+    let fetchErrorMsg = '';
+
+    try {
+      const res = await fetch(specialWebhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      fetchStatus = res.status;
+      fetchStatusText = res.statusText;
+    } catch (fetchErr) {
+      fetchErrorMsg = (fetchErr as Error).message;
+    }
+
+    if (fetchErrorMsg) {
+      return NextResponse.json({ 
+        message: `Fallo al llamar al webhook: ${fetchErrorMsg}. URL intentada: ${specialWebhookUrl}` 
+      }, { status: 500 });
+    }
+
+    if (fetchStatus >= 400) {
+      return NextResponse.json({ 
+        message: `El webhook respondió con código de error ${fetchStatus} (${fetchStatusText}). URL: ${specialWebhookUrl}` 
+      }, { status: 500 });
+    }
+
+    // Log notification in marketing DB (try/catch to avoid breaking success response if DB log fails)
+    try {
+      const titleMsg = `Automatización (Prueba): ${rule.name}`;
+      const messageMsg = `Se enviaron ${campaigns.length} campaña(s) de prueba a n8n para el contacto ${leadObj.firstname}`;
+      await queryMarketing(`
+        INSERT INTO notifications (lead_id, email, event_type, title, message)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [leadObj.id, leadObj.email, 'EMAIL_SENT', titleMsg, messageMsg]);
+    } catch (dbLogErr) {
+      console.error('Error logging test notification to DB:', dbLogErr);
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      message: `Prueba enviada correctamente al webhook. Código respuesta: ${fetchStatus} (${fetchStatusText})` 
+    });
+
   } catch (error) {
     console.error('Error running rule test:', error);
-    return NextResponse.json({ message: 'Error interno en la prueba', error: (error as Error).message }, { status: 500 });
+    return NextResponse.json({ 
+      message: 'Error interno en la prueba', 
+      error: (error as Error).message 
+    }, { status: 500 });
   }
 }

@@ -381,7 +381,7 @@ export async function dispatchExistingLeads(rule: any) {
     const campaignsRes = await queryMarketing(`
       SELECT id, title, subject, html_content, mjml_content 
       FROM campaigns 
-      WHERE id = ANY($1)
+      WHERE id = ANY($1::uuid[])
     `, [campaignIds]);
     const campaigns = campaignsRes.rows;
 
