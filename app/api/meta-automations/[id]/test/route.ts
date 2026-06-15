@@ -11,11 +11,12 @@ interface RouteParams {
 export async function POST(request: Request, { params }: RouteParams) {
   try {
     const id = params.id;
+    const ruleId = parseInt(id, 10);
     const body = await request.json();
     const { email, name, phone, formid, adname, adid, pie } = body;
 
     // 1. Get the rule (even if inactive)
-    const ruleRes = await queryMarketing('SELECT * FROM meta_automations WHERE id = $1', [id]);
+    const ruleRes = await queryMarketing('SELECT * FROM meta_automations WHERE id = $1', [ruleId]);
     if (ruleRes.rowCount === 0) {
       return NextResponse.json({ message: 'Regla no encontrada' }, { status: 404 });
     }
@@ -40,7 +41,7 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     // 3. Build test lead object
     const leadObj = {
-      id: 'test-lead-id',
+      id: '00000000-0000-0000-0000-000000000000',
       email: email || 'test_lead@alimin.cl',
       firstname: name || 'Juan Test Segmento',
       phone: phone || '+56999999999',
