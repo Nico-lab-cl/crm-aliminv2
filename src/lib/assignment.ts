@@ -3,7 +3,6 @@ import prisma from "./prisma";
 const ADVISORS = [
   { id: "db1e6577-01b1-4615-b35e-0d50752452f3", name: "Marcela" },
   { id: "a6ce92ca-f1a1-4dcf-a042-fda1c31ca485", name: "Orlando" },
-  { id: "77cea468-b4a5-44e6-aaa5-0a3f376affb1", name: "Barbara" },
 ];
 
 /**
@@ -67,20 +66,6 @@ export async function getNextAdvisorId(allowedIds?: string[], source?: string | 
       ? ADVISORS.filter(a => allowedIds.includes(a.id))
       : [...ADVISORS];
 
-    // Dynamic Source-based Exclusions: Exclude Barbara from Meta and Web leads
-    if (source) {
-      const cleanSource = source.toLowerCase();
-      const isMetaOrWeb = cleanSource.includes("meta") || 
-                          cleanSource.includes("web") || 
-                          cleanSource.includes("newsletter") ||
-                          cleanSource.includes("facebook") ||
-                          cleanSource.includes("instagram");
-      if (isMetaOrWeb) {
-        console.log(`[Auto-Assignment] Excluded Barbara from lead assignment. Source: ${source}`);
-        targetAdvisors = targetAdvisors.filter(a => a.id !== BARBARA_ID);
-      }
-    }
-
     // 2. Apply Marcela's manual exclusion
     if (MARCELA_EXCLUDED) {
       console.log(`[Auto-Assignment] Marcela is manually EXCLUDED from automatic lead assignments.`);
@@ -120,7 +105,7 @@ export async function getNextAdvisorId(allowedIds?: string[], source?: string | 
     return selectedId;
   } catch (error) {
     console.error("Error calculating next advisor:", error);
-    // Safe fallback: Orlando or Barbara if Marcela is excluded
+    // Safe fallback: Orlando if Marcela is excluded
     return MARCELA_EXCLUDED ? ORLANDO_ID : MARCELA_ID;
   }
 }
