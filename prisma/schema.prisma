@@ -81,6 +81,7 @@ model Lead {
   creditInterest String?
   preferredChannel String?
   inboxUrl       String?
+  emailEnabled   Boolean   @default(true)
 
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
