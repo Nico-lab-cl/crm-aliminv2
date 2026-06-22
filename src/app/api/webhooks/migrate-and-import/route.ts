@@ -163,6 +163,111 @@ export async function POST(request: Request) {
       }
     }
 
+    if (action === 'deactivate_barbara') {
+      const BARBARA_ID = '77cea468-b4a5-44e6-aaa5-0a3f376affb1';
+      const MARCELA_ID = 'db1e6577-01b1-4615-b35e-0d50752452f3';
+      const ORLANDO_ID = 'a6ce92ca-f1a1-4dcf-a042-fda1c31ca485';
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        // 1. Get all leads assigned to Barbara
+        const leadsRes = await client.query(
+          'SELECT id FROM "Lead" WHERE "assignedToId" = $1 ORDER BY "createdAt" ASC',
+          [BARBARA_ID]
+        );
+        const leadIds = leadsRes.rows.map(r => r.id);
+        
+        let marcelaLeadsCount = 0;
+        let orlandoLeadsCount = 0;
+
+        // 2. Reassign leads 50/50 between Marcela and Orlando
+        for (let i = 0; i < leadIds.length; i++) {
+          const targetId = i % 2 === 0 ? MARCELA_ID : ORLANDO_ID;
+          await client.query(
+            'UPDATE "Lead" SET "assignedToId" = $1 WHERE id = $2',
+            [targetId, leadIds[i]]
+          );
+          if (targetId === MARCELA_ID) {
+            marcelaLeadsCount++;
+          } else {
+            orlandoLeadsCount++;
+          }
+        }
+
+        // 3. Reassign Reservations to Orlando
+        const reservationsRes = await client.query(
+          'UPDATE "Reservation" SET "createdById" = $1 WHERE "createdById" = $2',
+          [ORLANDO_ID, BARBARA_ID]
+        );
+        const reservationsMigrated = reservationsRes.rowCount || 0;
+
+        // 4. Reassign Messages to Orlando
+        const messagesRes = await client.query(
+          'UPDATE "Message" SET "senderId" = $1 WHERE "senderId" = $2',
+          [ORLANDO_ID, BARBARA_ID]
+        );
+        const messagesMigrated = messagesRes.rowCount || 0;
+
+        // 5. Delete Notifications sent/assigned to Barbara
+        const notificationsRes = await client.query(
+          'DELETE FROM "Notification" WHERE "userId" = $1',
+          [BARBARA_ID]
+        );
+        const notificationsDeleted = notificationsRes.rowCount || 0;
+
+        // 6. Delete Barbara's User record
+        const userRes = await client.query(
+          'DELETE FROM "User" WHERE id = $1',
+          [BARBARA_ID]
+        );
+        const userDeleted = userRes.rowCount || 0;
+
+        await client.query('COMMIT');
+
+        // 7. Send push notifications to Marcela and Orlando about the new leads
+        const { createNotification } = await import('@/lib/notifications');
+        try {
+          if (marcelaLeadsCount > 0) {
+            await createNotification({
+              userId: MARCELA_ID,
+              title: "Nuevos Clientes Asignados 📈",
+              body: `Se te han asignado ${marcelaLeadsCount} clientes históricos debido a la deactivación de Barbara.`,
+              type: "ASSIGNMENT"
+            });
+          }
+          if (orlandoLeadsCount > 0) {
+            await createNotification({
+              userId: ORLANDO_ID,
+              title: "Nuevos Clientes Asignados 📈",
+              body: `Se te han asignado ${orlandoLeadsCount} clientes históricos debido a la deactivación de Barbara.`,
+              type: "ASSIGNMENT"
+            });
+          }
+        } catch (notifErr: any) {
+          console.error(`Failed to send notifications:`, notifErr.message);
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: 'Barbara deactivated and data reassigned successfully.',
+          leadsReassigned: leadIds.length,
+          leadsToMarcela: marcelaLeadsCount,
+          leadsToOrlando: orlandoLeadsCount,
+          reservationsReassigned: reservationsMigrated,
+          messagesReassigned: messagesMigrated,
+          notificationsDeleted,
+          userDeleted
+        });
+      } catch (err: any) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
     if (action === 'import') {
       const { leads, fields } = body;
       if (!Array.isArray(leads) || leads.length === 0) {
