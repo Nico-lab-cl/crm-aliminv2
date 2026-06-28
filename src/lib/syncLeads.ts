@@ -1,7 +1,7 @@
 import prisma from "./prisma";
 import { queryExternal } from "./externalDb";
 import externalPrisma from "./externalPrisma";
-import { getNextAdvisorId } from "./assignment";
+import { getNextAdvisorId, MARCELA_ID, ORLANDO_ID } from "./assignment";
 import { createNotification } from "./notifications";
 
 export async function syncExternalLeads() {
@@ -203,24 +203,6 @@ export async function syncExternalBookings() {
 
     let syncedCount = 0;
     
-    // Check if the test admin "nicolas" exists to assign everything to him
-    const adminUser = await (prisma as any).user.findFirst({
-      where: {
-        OR: [
-          { username: "nicolas" },
-          { id: "initial-admin-id" }
-        ]
-      }
-    });
-
-    if (!adminUser) {
-      console.log("Admin user 'nicolas' not found. Skipping bookings assignment as per test parameters.");
-      return { success: true, count: 0, message: "No admin user found to assign bookings" };
-    }
-
-    const assignedToId = adminUser.id;
-    console.log(`Test mode: redirecting all bookings to admin user 'nicolas' (ID: ${assignedToId})`);
-
     for (const booking of externalBookings) {
       if (!booking.email) continue;
       const emailLower = booking.email.toLowerCase();
@@ -249,12 +231,21 @@ export async function syncExternalBookings() {
         // Check if there is an existing lead with this email
         const existingLead = await (prisma as any).lead.findUnique({
           where: { email: emailLower },
-          select: { id: true }
+          select: { id: true, assignedToId: true }
         });
 
         let leadId;
+        let assignedToId;
         
         if (existingLead) {
+          // Keep existing advisor if already assigned (so test leads stay with Nicolas)
+          assignedToId = existingLead.assignedToId;
+
+          // If not assigned yet, use round-robin
+          if (!assignedToId) {
+            assignedToId = await getNextAdvisorId([MARCELA_ID, ORLANDO_ID], "VISITA");
+          }
+
           // Update existing lead
           const updatedLead = await (prisma as any).lead.update({
             where: { email: emailLower },
@@ -271,6 +262,9 @@ export async function syncExternalBookings() {
           });
           leadId = updatedLead.id;
         } else {
+          // New lead gets assigned to Marcela/Orlando in round-robin
+          assignedToId = await getNextAdvisorId([MARCELA_ID, ORLANDO_ID], "VISITA");
+
           // Create new lead
           const newLead = await (prisma as any).lead.create({
             data: {
@@ -293,16 +287,18 @@ export async function syncExternalBookings() {
         }
 
         // 4. Create notification
-        try {
-          await createNotification({
-            userId: assignedToId,
-            title: "🗓️ Nueva Visita Agendada",
-            body: `${booking.nombre} agendó para ${booking.proyecto} el ${dateStr} a las ${timePart}`,
-            leadId: leadId,
-            type: "VISIT",
-          });
-        } catch (notifErr) {
-          console.error("Failed to send booking notification:", notifErr);
+        if (assignedToId) {
+          try {
+            await createNotification({
+              userId: assignedToId,
+              title: "🗓️ Nueva Visita Agendada",
+              body: `${booking.nombre} agendó para ${booking.proyecto} el ${dateStr} a las ${timePart}`,
+              leadId: leadId,
+              type: "VISIT",
+            });
+          } catch (notifErr) {
+            console.error("Failed to send booking notification:", notifErr);
+          }
         }
 
         syncedCount++;
