@@ -23,6 +23,7 @@ export default function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [prevUnreadVisits, setPrevUnreadVisits] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const fetchNotifications = async () => {
@@ -31,7 +32,18 @@ export default function NotificationBell() {
       if (res.ok) {
         const data = await res.json();
         setNotifications(data);
-        setUnreadCount(data.filter((n: Notification) => !n.read).length);
+        const unreadAll = data.filter((n: Notification) => !n.read);
+        setUnreadCount(unreadAll.length);
+
+        // Count unread visits
+        const unreadVisits = unreadAll.filter((n: Notification) => n.type === 'VISIT').length;
+        if (unreadVisits > prevUnreadVisits) {
+          // New visit booking notification! Vibrate device!
+          if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+            navigator.vibrate([200, 100, 200, 100, 200]);
+          }
+        }
+        setPrevUnreadVisits(unreadVisits);
       }
     } catch (error) {
       console.error("Error fetching notifications:", error);

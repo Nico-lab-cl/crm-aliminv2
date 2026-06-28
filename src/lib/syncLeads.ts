@@ -2,6 +2,7 @@ import prisma from "./prisma";
 import { queryExternal } from "./externalDb";
 import externalPrisma from "./externalPrisma";
 import { getNextAdvisorId } from "./assignment";
+import { createNotification } from "./notifications";
 
 export async function syncExternalLeads() {
   console.log("Starting external leads sync...");
@@ -182,6 +183,139 @@ export async function syncReservationLeads() {
     return { success: true, count: syncedCount };
   } catch (error: any) {
     console.error("Critical error during reservation sync:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function syncExternalBookings() {
+  console.log("Starting external bookings sync...");
+  try {
+    // 1. Fetch bookings from External DB (bookings table)
+    const res = await queryExternal(`
+      SELECT id, nombre, email, celular, proyecto, fecha, hora, status, created_at as "createdAt"
+      FROM bookings
+      WHERE status = 'confirmed'
+      ORDER BY created_at ASC
+    `);
+
+    const externalBookings = res.rows;
+    console.log(`Found ${externalBookings.length} bookings in external database.`);
+
+    let syncedCount = 0;
+    
+    // Check if the test admin "nicolas" exists to assign everything to him
+    const adminUser = await (prisma as any).user.findFirst({
+      where: {
+        OR: [
+          { username: "nicolas" },
+          { id: "initial-admin-id" }
+        ]
+      }
+    });
+
+    if (!adminUser) {
+      console.log("Admin user 'nicolas' not found. Skipping bookings assignment as per test parameters.");
+      return { success: true, count: 0, message: "No admin user found to assign bookings" };
+    }
+
+    const assignedToId = adminUser.id;
+    console.log(`Test mode: redirecting all bookings to admin user 'nicolas' (ID: ${assignedToId})`);
+
+    for (const booking of externalBookings) {
+      if (!booking.email) continue;
+      const emailLower = booking.email.toLowerCase();
+
+      try {
+        // 2. Check if booking already synced
+        const existingBookingLead = await (prisma as any).lead.findFirst({
+          where: { bookingId: booking.id },
+          select: { id: true }
+        });
+
+        if (existingBookingLead) {
+          // Already synced!
+          continue;
+        }
+
+        // 3. Parse and combine fecha + hora
+        const bookingDate = new Date(booking.fecha);
+        const year = bookingDate.getFullYear();
+        const month = String(bookingDate.getMonth() + 1).padStart(2, '0');
+        const day = String(bookingDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+        const timePart = booking.hora || "12:00";
+        const visitDate = new Date(`${dateStr}T${timePart}:00`);
+
+        // Check if there is an existing lead with this email
+        const existingLead = await (prisma as any).lead.findUnique({
+          where: { email: emailLower },
+          select: { id: true }
+        });
+
+        let leadId;
+        
+        if (existingLead) {
+          // Update existing lead
+          const updatedLead = await (prisma as any).lead.update({
+            where: { email: emailLower },
+            data: {
+              bookingId: booking.id,
+              visited: true,
+              visitDate: visitDate,
+              visitProject: booking.proyecto,
+              status: "VISITA",
+              lastActivity: "Visita programada (Web)",
+              notes: `Visita programada vía web: ${booking.proyecto} para el ${dateStr} a las ${timePart}`,
+              assignedToId: assignedToId,
+            }
+          });
+          leadId = updatedLead.id;
+        } else {
+          // Create new lead
+          const newLead = await (prisma as any).lead.create({
+            data: {
+              email: emailLower,
+              firstName: booking.nombre,
+              phone: booking.celular,
+              source: "web aliminspa.cl",
+              interests: booking.proyecto,
+              visited: true,
+              visitDate: visitDate,
+              visitProject: booking.proyecto,
+              status: "VISITA",
+              lastActivity: "Visita programada (Web)",
+              notes: `Visita programada vía web: ${booking.proyecto} para el ${dateStr} a las ${timePart}`,
+              bookingId: booking.id,
+              assignedToId: assignedToId,
+            }
+          });
+          leadId = newLead.id;
+        }
+
+        // 4. Create notification
+        try {
+          await createNotification({
+            userId: assignedToId,
+            title: "🗓️ Nueva Visita Agendada",
+            body: `${booking.nombre} agendó para ${booking.proyecto} el ${dateStr} a las ${timePart}`,
+            leadId: leadId,
+            type: "VISIT",
+          });
+        } catch (notifErr) {
+          console.error("Failed to send booking notification:", notifErr);
+        }
+
+        syncedCount++;
+      } catch (bookingError) {
+        console.error(`Error syncing booking ${booking.id}:`, bookingError);
+      }
+    }
+
+    console.log(`Booking sync completed. Successfully synced ${syncedCount} bookings.`);
+    return { success: true, count: syncedCount };
+
+  } catch (error: any) {
+    console.error("Critical error during bookings sync:", error);
     return { success: false, error: error.message };
   }
 }

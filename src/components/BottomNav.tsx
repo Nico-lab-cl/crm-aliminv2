@@ -4,11 +4,43 @@ import { Users, UserCircle, LayoutGrid, Plus, PenTool, MessageSquare } from "luc
 import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import clsx from "clsx";
+import { useState, useEffect } from "react";
 
 export default function BottomNav() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  const [hasUnreadVisits, setHasUnreadVisits] = useState(false);
+
+  const checkUnreadVisits = async () => {
+    try {
+      const res = await fetch('/api/notifications');
+      if (res.ok) {
+        const notifications = await res.json();
+        const unreadVisits = notifications.some((n: any) => !n.read && n.type === 'VISIT');
+        setHasUnreadVisits(unreadVisits);
+      }
+    } catch (err) {
+      console.error("Error checking unread visits in BottomNav:", err);
+    }
+  };
+
+  const markVisitsAsRead = async () => {
+    try {
+      await fetch('/api/notifications/read-visits', { method: 'POST' });
+      setHasUnreadVisits(false);
+    } catch (err) {
+      console.error("Error marking visits as read in BottomNav:", err);
+    }
+  };
+
+  useEffect(() => {
+    checkUnreadVisits();
+    // Poll every 30 seconds
+    const interval = setInterval(checkUnreadVisits, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const currentMenu = searchParams.get("menu");
 
@@ -23,6 +55,7 @@ export default function BottomNav() {
       router.push("/dashboard");
     } else if (target === "visits") {
       router.push("/dashboard?menu=visits");
+      markVisitsAsRead();
     } else if (target === "signings") {
       router.push("/dashboard?menu=signings");
     } else if (target === "inbox") {
@@ -67,11 +100,14 @@ export default function BottomNav() {
             <button
               onClick={() => handleNav("visits")}
               className={clsx(
-                "flex flex-col items-center gap-1 transition-all rounded-xl p-2",
+                "flex flex-col items-center gap-1 transition-all rounded-xl p-2 relative",
                 isVisitsActive ? "text-[#D4AF37] scale-110" : "text-slate-400 opacity-60"
               )}
             >
               <LayoutGrid size={24} strokeWidth={isVisitsActive ? 2.5 : 2} />
+              {hasUnreadVisits && (
+                <span className="absolute top-1 right-2.5 w-2.5 h-2.5 bg-red-500 rounded-full border border-white animate-pulse" />
+              )}
               <span className="text-[10px] font-bold tracking-wider">VISITAS</span>
             </button>
           </div>

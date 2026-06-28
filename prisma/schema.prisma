@@ -32,6 +32,7 @@ enum Role {
 model Lead {
   id           String    @id @default(uuid())
   contactId    String?
+  bookingId    String?   @unique
   firstName    String?
   lastName     String?
   phone        String?

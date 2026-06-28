@@ -261,6 +261,8 @@ function DashboardContent() {
       if (isVisitsActive) {
         fetchVisits(calendarMonth);
         setSelectedDay(null);
+        // Clear visits notification badge
+        fetch('/api/notifications/read-visits', { method: 'POST' }).catch(err => console.error(err));
       } else if (isSigningsActive) {
         fetchSignings(calendarMonth);
         setSelectedDay(null);

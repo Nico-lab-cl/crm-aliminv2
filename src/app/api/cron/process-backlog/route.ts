@@ -11,6 +11,14 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: Request) {
   try {
+    // --- TRIGGER SYNC ---
+    try {
+      const { syncExternalBookings } = await import("@/lib/syncLeads");
+      await syncExternalBookings();
+    } catch (syncErr) {
+      console.error("Booking sync failed in process-backlog cron", syncErr);
+    }
+
     // 1. Check if we are in the active window (9:00 AM - 12:00 AM Chile)
     if (!isWithinAssignmentWindow()) {
       return NextResponse.json({ 

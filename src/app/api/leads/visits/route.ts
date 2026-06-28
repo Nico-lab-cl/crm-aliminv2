@@ -24,6 +24,14 @@ export async function GET(req: Request) {
 
   const userSession = session as any;
 
+  // --- TRIGGER SYNC ---
+  try {
+    const { syncExternalBookings } = await import("@/lib/syncLeads");
+    await syncExternalBookings();
+  } catch (syncErr) {
+    console.error("Booking sync failed, continuing with local data", syncErr);
+  }
+
   try {
     let where: any = {
       visited: true,
