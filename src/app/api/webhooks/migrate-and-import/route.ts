@@ -60,6 +60,7 @@ export async function POST(request: Request) {
       await pool.query(`ALTER TABLE "Lead" ADD COLUMN IF NOT EXISTS "preferredChannel" VARCHAR(255)`);
       await pool.query(`ALTER TABLE "Lead" ADD COLUMN IF NOT EXISTS "inboxUrl" TEXT`);
       await pool.query(`ALTER TABLE "Lead" ADD COLUMN IF NOT EXISTS "bookingId" VARCHAR(255) UNIQUE`);
+      await pool.query(`ALTER TABLE "Lead" ADD COLUMN IF NOT EXISTS "emailEnabled" BOOLEAN DEFAULT true`);
 
       // 2. Insert/Update Users
       const insertUsersQuery = `
