@@ -48,7 +48,10 @@ export async function syncExternalLeads() {
           assignedToId = await getNextAdvisorId(undefined, leadSource);
         }
 
-        await (prisma as any).lead.upsert({
+        const isMinipie = ext.externalProject?.toUpperCase().includes('MINIPIE');
+        const tags = isMinipie ? 'Minipie' : undefined;
+
+        const upserted = await (prisma as any).lead.upsert({
           where: { email: emailLower },
           update: {
             firstName: ext.firstName,
@@ -56,6 +59,7 @@ export async function syncExternalLeads() {
             source: ext.externalProject === 'Newsletter' ? 'Newsletter' : 'web aliminspa.cl',
             city: ext.city,
             interests: ext.externalProject !== 'Newsletter' ? ext.externalProject : undefined,
+            tags: tags,
             utmSource: ext.utmSource,
             utmMedium: ext.utmMedium,
             utmCampaign: ext.utmCampaign,
@@ -71,6 +75,7 @@ export async function syncExternalLeads() {
             source: ext.externalProject === 'Newsletter' ? 'Newsletter' : 'web aliminspa.cl',
             city: ext.city,
             interests: ext.externalProject !== 'Newsletter' ? ext.externalProject : undefined,
+            tags: tags,
             utmSource: ext.utmSource,
             utmMedium: ext.utmMedium,
             utmCampaign: ext.utmCampaign,
@@ -81,6 +86,22 @@ export async function syncExternalLeads() {
             assignedToId: assignedToId,
           }
         });
+
+        // Notificación push para leads Minipie
+        if (isMinipie && assignedToId) {
+          try {
+            await createNotification({
+              userId: assignedToId,
+              title: "🏠 Nuevo Lead Minipie",
+              body: `${ext.firstName} está interesado/a en ${ext.externalProject}`,
+              leadId: upserted.id,
+              type: "NEW_LEAD",
+            });
+          } catch (notifErr) {
+            console.error("Failed to send Minipie notification:", notifErr);
+          }
+        }
+
         syncedCount++;
       } catch (upsertError) {
         console.error(`Error syncing lead ${ext.email}:`, upsertError);
