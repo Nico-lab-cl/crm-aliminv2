@@ -54,10 +54,13 @@ export async function POST(req: Request) {
     }
 
     // 3. AUTO-ASIGNACIÓN: Si el Lead no tiene asesor, asignarlo al actual
-    if (conversation.leadId && !conversation.lead.assignedToId) {
+    // Barbara (BARBARA_ID) está excluida de recibir asignaciones automáticas
+    const BARBARA_ID = "77cea468-b4a5-44e6-aaa5-0a3f376affb1";
+    const senderId = (session.user as any).id;
+    if (conversation.leadId && !conversation.lead.assignedToId && senderId !== BARBARA_ID) {
       await (prisma as any).lead.update({
         where: { id: conversation.leadId },
-        data: { assignedToId: (session.user as any).id }
+        data: { assignedToId: senderId }
       });
     }
 
