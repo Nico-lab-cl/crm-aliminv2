@@ -35,6 +35,13 @@ export async function PATCH(
 
   try {
     const data = await req.json();
+
+    // Barbara nunca puede ser asignada como asesor de un lead
+    const BARBARA_ID = "77cea468-b4a5-44e6-aaa5-0a3f376affb1";
+    if (data.assignedToId === BARBARA_ID) {
+      delete data.assignedToId;
+    }
+
     const updatedLead = await (prisma as any).lead.update({
       where: { id: params.id },
       data: {

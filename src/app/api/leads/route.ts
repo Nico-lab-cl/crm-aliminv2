@@ -288,8 +288,9 @@ export async function POST(req: Request) {
     let assignedToId = null;
     const userSession = session as any;
 
-    if (userSession?.user?.id && userSession.user.role === "ASESOR") {
-      // If an advisor is creating the lead, assign it to them directly
+    const BARBARA_ID = "77cea468-b4a5-44e6-aaa5-0a3f376affb1";
+    if (userSession?.user?.id && userSession.user.role === "ASESOR" && userSession.user.id !== BARBARA_ID) {
+      // If an advisor is creating the lead, assign it to them directly (Barbara excluded)
       assignedToId = userSession.user.id;
       leadData.assignedToId = assignedToId;
     } else if (!existingLead) {

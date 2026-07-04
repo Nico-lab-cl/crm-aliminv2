@@ -5,6 +5,9 @@ const ADVISORS = [
   { id: "a6ce92ca-f1a1-4dcf-a042-fda1c31ca485", name: "Orlando" },
 ];
 
+// Barbara nunca recibe asignaciones automáticas bajo ninguna circunstancia
+const EXCLUDED_FROM_ASSIGNMENT = new Set(["77cea468-b4a5-44e6-aaa5-0a3f376affb1"]);
+
 /**
  * Temporary redirection for Orlando -> Marcela
  * Duration: Active until 2026-04-03T22:00:00-03:00 (10 PM Chile)
@@ -61,10 +64,11 @@ export async function getNextAdvisorId(allowedIds?: string[], source?: string | 
   }
 
   try {
-    // 1. Determine available advisors
-    let targetAdvisors = allowedIds 
+    // 1. Determine available advisors — siempre excluir a los de EXCLUDED_FROM_ASSIGNMENT
+    let targetAdvisors = (allowedIds
       ? ADVISORS.filter(a => allowedIds.includes(a.id))
-      : [...ADVISORS];
+      : [...ADVISORS]
+    ).filter(a => !EXCLUDED_FROM_ASSIGNMENT.has(a.id));
 
     // 2. Apply Marcela's manual exclusion
     if (MARCELA_EXCLUDED) {
