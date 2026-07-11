@@ -12,11 +12,24 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   try {
     // --- TRIGGER SYNC ---
+    const { syncExternalBookings, syncExternalLeads, syncReservationLeads } = await import("@/lib/syncLeads");
+
     try {
-      const { syncExternalBookings } = await import("@/lib/syncLeads");
       await syncExternalBookings();
     } catch (syncErr) {
       console.error("Booking sync failed in process-backlog cron", syncErr);
+    }
+
+    try {
+      await syncExternalLeads();
+    } catch (syncErr) {
+      console.error("External leads sync failed in process-backlog cron", syncErr);
+    }
+
+    try {
+      await syncReservationLeads();
+    } catch (syncErr) {
+      console.error("Reservation leads sync failed in process-backlog cron", syncErr);
     }
 
     // 1. Check if we are in the active window (9:00 AM - 12:00 AM Chile)
