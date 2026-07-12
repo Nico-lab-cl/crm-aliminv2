@@ -4,6 +4,8 @@ import externalPrisma from "./externalPrisma";
 import { getNextAdvisorId, MARCELA_ID, ORLANDO_ID } from "./assignment";
 import { createNotification } from "./notifications";
 
+const NICOLAS_ID = "initial-admin-id";
+
 export async function syncExternalLeads() {
   console.log("Starting external leads sync...");
   
@@ -42,10 +44,14 @@ export async function syncExternalLeads() {
           select: { id: true, assignedToId: true }
         });
 
+        const isNewsletter = ext.externalProject === 'Newsletter';
+
         let assignedToId = existingLead?.assignedToId || null;
-        if (!assignedToId) {
-          const leadSource = ext.externalProject === 'Newsletter' ? 'Newsletter' : 'web aliminspa.cl';
-          assignedToId = await getNextAdvisorId(undefined, leadSource);
+        if (isNewsletter) {
+          // Los leads de Newsletter siempre van al admin Nicolas, nunca al round-robin
+          assignedToId = NICOLAS_ID;
+        } else if (!assignedToId) {
+          assignedToId = await getNextAdvisorId(undefined, 'web aliminspa.cl');
         }
 
         const isMinipie = ext.externalProject?.toUpperCase().includes('MINIPIE');
