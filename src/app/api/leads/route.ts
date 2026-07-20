@@ -294,20 +294,31 @@ export async function POST(req: Request) {
       assignedToId = userSession.user.id;
       leadData.assignedToId = assignedToId;
     } else if (!existingLead) {
-      // Specialized Assignment Rules for Meta Platform
+      const NICOLAS_ID = "initial-admin-id";
       const MARCELA_ID = "db1e6577-01b1-4615-b35e-0d50752452f3";
       const ORLANDO_ID = "a6ce92ca-f1a1-4dcf-a042-fda1c31ca485";
 
-      // Restore Round Robin for all leads as requested
-      const { getNextAdvisorId } = await import("@/lib/assignment");
-      
-      // Determine advisor pool based on source
-      // If it's a META lead (webhook from field_data or explicit source), exclude Barbara
-      const isMetaLead = leadData.source === "META" || (data.field_data && Array.isArray(data.field_data));
-      const allowedIds = isMetaLead ? [MARCELA_ID, ORLANDO_ID] : undefined;
-      
-      assignedToId = await getNextAdvisorId(allowedIds, leadData.source);
+      if (leadData.source === "Newsletter") {
+        // Los leads de Newsletter siempre van al admin Nicolas, nunca al round-robin
+        assignedToId = NICOLAS_ID;
+      } else {
+        // Restore Round Robin for all leads as requested
+        const { getNextAdvisorId } = await import("@/lib/assignment");
+
+        // Determine advisor pool based on source
+        // If it's a META lead (webhook from field_data or explicit source), exclude Barbara
+        const isMetaLead = leadData.source === "META" || (data.field_data && Array.isArray(data.field_data));
+        const allowedIds = isMetaLead ? [MARCELA_ID, ORLANDO_ID] : undefined;
+
+        assignedToId = await getNextAdvisorId(allowedIds, leadData.source);
+      }
       leadData.assignedToId = assignedToId;
+    }
+
+    // Tag automatica para leads de la promocion Minipie
+    const isMinipie = leadData.interests?.toUpperCase().includes("MINIPIE");
+    if (isMinipie) {
+      leadData.tags = leadData.tags ? `${leadData.tags}, Minipie` : "Minipie";
     }
 
     const lead = await (prisma as any).lead.upsert({
@@ -318,17 +329,27 @@ export async function POST(req: Request) {
       },
       create: leadData,
     });
-    
+
     // Trigger notification if it's a new assignment
     if (!existingLead && assignedToId) {
       const { createNotification } = await import("@/lib/notifications");
-      await createNotification({
-        userId: assignedToId,
-        title: "Nuevo Lead Asignado (Auto) 🤖",
-        body: `Se te ha asignado un nuevo lead de ${leadData.source}: ${leadData.firstName} ${leadData.lastName || ''}`,
-        leadId: lead.id,
-        type: "ASSIGNMENT",
-      });
+      if (isMinipie) {
+        await createNotification({
+          userId: assignedToId,
+          title: "🏠 Nuevo Lead Minipie",
+          body: `${leadData.firstName} está interesado/a en ${leadData.interests}`,
+          leadId: lead.id,
+          type: "NEW_LEAD",
+        });
+      } else {
+        await createNotification({
+          userId: assignedToId,
+          title: "Nuevo Lead Asignado (Auto) 🤖",
+          body: `Se te ha asignado un nuevo lead de ${leadData.source}: ${leadData.firstName} ${leadData.lastName || ''}`,
+          leadId: lead.id,
+          type: "ASSIGNMENT",
+        });
+      }
     }
 
     return NextResponse.json(lead);
