@@ -89,7 +89,7 @@ export default function BottomNav() {
             <button
               onClick={() => handleNav("leads")}
               className={clsx(
-                "flex flex-col items-center gap-1 transition-all rounded-xl p-2",
+                "flex flex-col items-center gap-1 transition-all rounded-xl p-1",
                 isLeadsActive ? "text-[#D4AF37] scale-110" : "text-slate-400 opacity-60"
               )}
             >
@@ -100,7 +100,7 @@ export default function BottomNav() {
             <button
               onClick={() => handleNav("visits")}
               className={clsx(
-                "flex flex-col items-center gap-1 transition-all rounded-xl p-2 relative",
+                "flex flex-col items-center gap-1 transition-all rounded-xl p-1 relative",
                 isVisitsActive ? "text-[#D4AF37] scale-110" : "text-slate-400 opacity-60"
               )}
             >
@@ -112,13 +112,13 @@ export default function BottomNav() {
             </button>
           </div>
 
-          <div className="w-20 flex-shrink-0" /> {/* Larger Spacer for FAB */}
+          <div className="w-8 flex-shrink-0" /> {/* Spacer for FAB */}
 
           <div className="flex-1 flex justify-around">
             <button
               onClick={() => handleNav("inbox")}
               className={clsx(
-                "flex flex-col items-center gap-1 transition-all rounded-xl p-2",
+                "flex flex-col items-center gap-1 transition-all rounded-xl p-1",
                 isInboxActive ? "text-[#D4AF37] scale-110" : "text-slate-400 opacity-60"
               )}
             >
@@ -129,7 +129,7 @@ export default function BottomNav() {
             <button
               onClick={() => handleNav("signings")}
               className={clsx(
-                "flex flex-col items-center gap-1 transition-all rounded-xl p-2",
+                "flex flex-col items-center gap-1 transition-all rounded-xl p-1",
                 isSigningsActive ? "text-[#D4AF37] scale-110" : "text-slate-400 opacity-60"
               )}
             >
@@ -140,7 +140,7 @@ export default function BottomNav() {
             <button
               onClick={() => handleNav("profile")}
               className={clsx(
-                "flex flex-col items-center gap-1 transition-all rounded-xl p-2",
+                "flex flex-col items-center gap-1 transition-all rounded-xl p-1",
                 isProfileActive ? "text-[#D4AF37] scale-110" : "text-slate-400 opacity-60"
               )}
             >
