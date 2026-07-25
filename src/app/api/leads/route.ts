@@ -288,15 +288,15 @@ export async function POST(req: Request) {
     let assignedToId = null;
     const userSession = session as any;
 
-    const BARBARA_ID = "77cea468-b4a5-44e6-aaa5-0a3f376affb1";
-    if (userSession?.user?.id && userSession.user.role === "ASESOR" && userSession.user.id !== BARBARA_ID) {
-      // If an advisor is creating the lead, assign it to them directly (Barbara excluded)
+    if (userSession?.user?.id && userSession.user.role === "ASESOR") {
+      // If an advisor is creating the lead, assign it to them directly
       assignedToId = userSession.user.id;
       leadData.assignedToId = assignedToId;
     } else if (!existingLead) {
       const NICOLAS_ID = "initial-admin-id";
       const MARCELA_ID = "db1e6577-01b1-4615-b35e-0d50752452f3";
       const ORLANDO_ID = "a6ce92ca-f1a1-4dcf-a042-fda1c31ca485";
+      const BARBARA_ID = "77cea468-b4a5-44e6-aaa5-0a3f376affb1";
 
       if (leadData.source === "Newsletter") {
         // Los leads de Newsletter siempre van al admin Nicolas, nunca al round-robin
@@ -306,9 +306,8 @@ export async function POST(req: Request) {
         const { getNextAdvisorId } = await import("@/lib/assignment");
 
         // Determine advisor pool based on source
-        // If it's a META lead (webhook from field_data or explicit source), exclude Barbara
         const isMetaLead = leadData.source === "META" || (data.field_data && Array.isArray(data.field_data));
-        const allowedIds = isMetaLead ? [MARCELA_ID, ORLANDO_ID] : undefined;
+        const allowedIds = isMetaLead ? [MARCELA_ID, ORLANDO_ID, BARBARA_ID] : undefined;
 
         assignedToId = await getNextAdvisorId(allowedIds, leadData.source);
       }

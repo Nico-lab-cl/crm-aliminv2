@@ -1,5 +1,5 @@
 import prisma from "./prisma";
-import { getNextAdvisorId, isWithinAssignmentWindow, MARCELA_ID, ORLANDO_ID } from "./assignment";
+import { getNextAdvisorId, isWithinAssignmentWindow, MARCELA_ID, ORLANDO_ID, BARBARA_ID } from "./assignment";
 import { createNotification } from "./notifications";
 
 export async function runProcessBacklog() {
@@ -37,7 +37,7 @@ export async function runProcessBacklog() {
   }
 
   const isMetaLead = lead.source === "META" || lead.utmSource === "facebook" || lead.utmSource === "instagram";
-  const allowedIds = isMetaLead ? [MARCELA_ID, ORLANDO_ID] : undefined;
+  const allowedIds = isMetaLead ? [MARCELA_ID, ORLANDO_ID, BARBARA_ID] : undefined;
 
   const assignedToId = await getNextAdvisorId(allowedIds, lead.source);
 

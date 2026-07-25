@@ -3,10 +3,8 @@ import prisma from "./prisma";
 const ADVISORS = [
   { id: "db1e6577-01b1-4615-b35e-0d50752452f3", name: "Marcela" },
   { id: "a6ce92ca-f1a1-4dcf-a042-fda1c31ca485", name: "Orlando" },
+  { id: "77cea468-b4a5-44e6-aaa5-0a3f376affb1", name: "Barbara" },
 ];
-
-// Barbara nunca recibe asignaciones automáticas bajo ninguna circunstancia
-const EXCLUDED_FROM_ASSIGNMENT = new Set(["77cea468-b4a5-44e6-aaa5-0a3f376affb1"]);
 
 /**
  * Temporary redirection for Orlando -> Marcela
@@ -64,11 +62,10 @@ export async function getNextAdvisorId(allowedIds?: string[], source?: string | 
   }
 
   try {
-    // 1. Determine available advisors — siempre excluir a los de EXCLUDED_FROM_ASSIGNMENT
-    let targetAdvisors = (allowedIds
+    // 1. Determine available advisors
+    let targetAdvisors = allowedIds
       ? ADVISORS.filter(a => allowedIds.includes(a.id))
-      : [...ADVISORS]
-    ).filter(a => !EXCLUDED_FROM_ASSIGNMENT.has(a.id));
+      : [...ADVISORS];
 
     // 2. Apply Marcela's manual exclusion
     if (MARCELA_EXCLUDED) {

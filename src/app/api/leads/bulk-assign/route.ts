@@ -20,11 +20,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "assignedToId is required" }, { status: 400 });
     }
 
-    const BARBARA_ID = "77cea468-b4a5-44e6-aaa5-0a3f376affb1";
-    if (assignedToId === BARBARA_ID) {
-      return NextResponse.json({ error: "No se pueden asignar leads a Barbara" }, { status: 403 });
-    }
-
     if (!emails || !Array.isArray(emails) || emails.length === 0) {
       return NextResponse.json({ error: "emails array is required" }, { status: 400 });
     }

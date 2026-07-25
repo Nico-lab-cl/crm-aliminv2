@@ -1,7 +1,7 @@
 import prisma from "./prisma";
 import { queryExternal } from "./externalDb";
 import externalPrisma from "./externalPrisma";
-import { getNextAdvisorId, MARCELA_ID, ORLANDO_ID } from "./assignment";
+import { getNextAdvisorId, MARCELA_ID, ORLANDO_ID, BARBARA_ID } from "./assignment";
 import { createNotification } from "./notifications";
 
 const NICOLAS_ID = "initial-admin-id";
@@ -270,7 +270,7 @@ export async function syncExternalBookings() {
 
           // If not assigned yet, use round-robin
           if (!assignedToId) {
-            assignedToId = await getNextAdvisorId([MARCELA_ID, ORLANDO_ID], "VISITA");
+            assignedToId = await getNextAdvisorId([MARCELA_ID, ORLANDO_ID, BARBARA_ID], "VISITA");
           }
 
           // Update existing lead
@@ -290,7 +290,7 @@ export async function syncExternalBookings() {
           leadId = updatedLead.id;
         } else {
           // New lead gets assigned to Marcela/Orlando in round-robin
-          assignedToId = await getNextAdvisorId([MARCELA_ID, ORLANDO_ID], "VISITA");
+          assignedToId = await getNextAdvisorId([MARCELA_ID, ORLANDO_ID, BARBARA_ID], "VISITA");
 
           // Create new lead
           const newLead = await (prisma as any).lead.create({
