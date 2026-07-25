@@ -384,17 +384,19 @@ function DashboardContent() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="relative">
-               <input 
+            <div className="relative min-w-0">
+               <input
                   type="text"
                   placeholder="Buscar lead..."
                   value={searchTerm}
                   onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                  className="bg-slate-100 border-none rounded-full py-2 pl-10 pr-4 text-xs font-medium w-40 focus:w-56 focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                  className="bg-slate-100 border-none rounded-full py-2 pl-10 pr-4 text-xs font-medium w-24 focus:w-56 focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                />
                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             </div>
-            <NotificationBell />
+            <div className="shrink-0">
+              <NotificationBell />
+            </div>
           </div>
         </div>
 
