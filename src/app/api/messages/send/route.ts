@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { WEB_CHAT_PLATFORM } from "@/lib/web-chat";
 
 export async function POST(req: Request) {
   const session = (await getServerSession(authOptions as any)) as any;
@@ -24,8 +25,14 @@ export async function POST(req: Request) {
     }
 
     // 2. Enviar respuesta por Meta (Messenger o Comentario)
+    //    El chat web no pasa por Meta: el mensaje sólo se guarda y el widget de
+    //    aliminspa.cl lo recoge en su siguiente consulta.
+    const esChatWeb = conversation.platform === WEB_CHAT_PLATFORM;
+
     let metaResponse;
-    if (sourceType === "DIRECT") {
+    if (esChatWeb) {
+      // Sin transporte externo que llamar.
+    } else if (sourceType === "DIRECT") {
       // API de Messenger
       const url = `https://graph.facebook.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
       metaResponse = await fetch(url, {
@@ -47,10 +54,12 @@ export async function POST(req: Request) {
       });
     }
 
-    const metaData = await metaResponse?.json();
-    if (!metaResponse?.ok) {
-      console.error("Error de Meta API:", metaData);
-      return NextResponse.json({ error: "Failed to send message via Meta", details: metaData }, { status: 500 });
+    if (!esChatWeb) {
+      const metaData = await metaResponse?.json();
+      if (!metaResponse?.ok) {
+        console.error("Error de Meta API:", metaData);
+        return NextResponse.json({ error: "Failed to send message via Meta", details: metaData }, { status: 500 });
+      }
     }
 
     // 3. AUTO-ASIGNACIÓN: Si el Lead no tiene asesor, asignarlo al actual
@@ -72,6 +81,15 @@ export async function POST(req: Request) {
         sourceType,
       }
     });
+
+    // 5. Mover la conversación al tope de la bandeja: crear el mensaje por sí
+    //    solo no toca updatedAt, que es el campo por el que se ordena.
+    if (esChatWeb) {
+      await (prisma as any).conversation.update({
+        where: { id: conversation.id },
+        data: { visitorNotifiedAt: null },
+      });
+    }
 
     return NextResponse.json(newMessage);
   } catch (error) {
