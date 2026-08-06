@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MessageSquare, User, Clock, ChevronRight, Facebook, Instagram, Search, ShieldCheck, MessageCircle, Phone, Calendar, RefreshCw } from "lucide-react";
+import { MessageSquare, User, Clock, ChevronRight, Facebook, Instagram, Search, ShieldCheck, MessageCircle, Phone, Calendar, RefreshCw, Globe } from "lucide-react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { formatDistanceToNow, isToday, isYesterday, startOfWeek, endOfDay, isWithinInterval, parseISO } from "date-fns";
@@ -13,7 +13,7 @@ export default function InboxPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [propertyFilter, setPropertyFilter] = useState<"all" | "my_leads" | "unassigned">("all");
-  const [channelFilter, setChannelFilter] = useState<"all" | "facebook" | "instagram" | "tiktok" | "comments">("all");
+  const [channelFilter, setChannelFilter] = useState<"all" | "web" | "facebook" | "instagram" | "tiktok" | "comments">("all");
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "yesterday" | "this_week" | "range">("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -120,6 +120,7 @@ export default function InboxPage() {
 
     const matchesChannel = 
         channelFilter === "all" ? true :
+        channelFilter === "web" ? conv.platform === "web" :
         channelFilter === "facebook" ? conv.platform === "facebook" && lastMsgType === "DIRECT" :
         channelFilter === "instagram" ? conv.platform === "instagram" && lastMsgType === "DIRECT" :
         channelFilter === "tiktok" ? conv.platform === "tiktok" && lastMsgType === "DIRECT" :
@@ -260,6 +261,7 @@ export default function InboxPage() {
               className="w-full bg-slate-100 border-none rounded-xl py-3 px-3 text-[10px] font-black uppercase tracking-wider appearance-none outline-none focus:ring-2 focus:ring-primary/20 text-slate-600 pr-8"
             >
               <option value="all">Canal: Todos</option>
+              <option value="web">Chat Web</option>
               <option value="facebook">Messenger FB</option>
               <option value="instagram">Instagram Direct</option>
               <option value="tiktok">TikTok Direct</option>
@@ -347,7 +349,9 @@ export default function InboxPage() {
                     )}
                   </div>
                   <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-white shadow-sm flex items-center justify-center ring-2 ring-white z-10">
-                    {conv.platform === "facebook" ? (
+                    {conv.platform === "web" ? (
+                        <Globe size={12} className="text-emerald-600" />
+                    ) : conv.platform === "facebook" ? (
                         <Facebook size={12} className="text-[#1877F2]" fill="currentColor" />
                     ) : conv.platform === "instagram" ? (
                         <Instagram size={12} className="text-[#E4405F]" />
@@ -371,7 +375,7 @@ export default function InboxPage() {
                     </span>
                   </div>
                   <p className="text-sm text-slate-500 truncate flex items-center gap-1">
-                    {conv.messages[0]?.senderType === "meta" ? (
+                    {conv.messages[0] && conv.messages[0].senderType !== "advisor" ? (
                       <span className={`font-black text-[9px] uppercase tracking-tighter opacity-70 flex-shrink-0 ${conv.messages[0]?.sourceType === 'COMMENT' ? 'text-rose-500' : 'text-primary'}`}>
                         {conv.messages[0]?.sourceType === 'COMMENT' ? 'Comentario:' : 'Mensaje:'}
                       </span>

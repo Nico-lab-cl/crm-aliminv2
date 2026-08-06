@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { ArrowLeft, Send, User, Facebook, Instagram, ShieldCheck, MessageCircle } from "lucide-react";
+import { ArrowLeft, Send, User, Facebook, Instagram, ShieldCheck, MessageCircle, Globe } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -74,6 +74,14 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
 
   const leadName = conversation.lead ? `${conversation.lead.firstName} ${conversation.lead.lastName}` : `Usuario Meta (${conversation.psid.slice(-4)})`;
 
+  // En el chat web sí sabemos si la persona sigue con la ventana abierta: el
+  // widget marca su presencia cada vez que consulta por mensajes nuevos.
+  const esChatWeb = conversation.platform === "web";
+  const visitanteEnLinea =
+    esChatWeb &&
+    conversation.visitorLastSeenAt &&
+    Date.now() - new Date(conversation.visitorLastSeenAt).getTime() < 60_000;
+
   return (
     <div className="flex flex-col h-screen bg-[#F5F7F9]">
       {/* Header */}
@@ -89,7 +97,9 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
               <User size={20} />
           )}
           <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-lg bg-white shadow-sm flex items-center justify-center ring-2 ring-white">
-            {conversation.platform === "facebook" ? (
+            {conversation.platform === "web" ? (
+                <Globe size={10} className="text-emerald-600" />
+            ) : conversation.platform === "facebook" ? (
                 <Facebook size={10} className="text-[#1877F2]" fill="currentColor" />
             ) : conversation.platform === "instagram" ? (
                 <Instagram size={10} className="text-[#E4405F]" />
@@ -104,8 +114,19 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
             {conversation.lead ? `${conversation.lead.firstName} ${conversation.lead.lastName}` : (conversation.metaName || `Usuario Meta (${conversation.psid.slice(-4)})`)}
           </h2>
           <div className="flex items-center gap-1">
-             <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">En Línea</span>
+             {esChatWeb ? (
+               <>
+                 <div className={`w-1.5 h-1.5 rounded-full ${visitanteEnLinea ? "bg-green-500 animate-pulse" : "bg-slate-300"}`} />
+                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                   {visitanteEnLinea ? "En la página ahora" : "Salió de la página"}
+                 </span>
+               </>
+             ) : (
+               <>
+                 <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">En Línea</span>
+               </>
+             )}
           </div>
         </div>
       </header>

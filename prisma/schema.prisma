@@ -93,13 +93,18 @@ model Lead {
 
 model Conversation {
   id        String    @id @default(uuid())
-  psid      String    @unique // Page-Scoped ID from Meta
-  platform  String    // "facebook" or "instagram"
+  psid      String    @unique // Page-Scoped ID de Meta, o "web:<sessionId>" en el chat web
+  platform  String    // "facebook", "instagram", "tiktok" o "web"
   metaName  String?   // Nombre real desde Meta
   metaImage String?   // Foto de perfil desde Meta
   leadId    String?
   lead      Lead?     @relation(fields: [leadId], references: [id])
   messages  Message[]
+
+  // Chat web: presencia del visitante y avisos por correo
+  visitorLastSeenAt DateTime? // Última vez que el visitante tuvo la ventana del chat abierta
+  visitorNotifiedAt DateTime? // Último aviso enviado al visitante por respuesta del asesor
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
@@ -111,7 +116,7 @@ model Message {
   text           String
   senderId       String?      // If sent by an advisor (User.id)
   sender         User?        @relation(fields: [senderId], references: [id])
-  senderType     String       // "meta" or "advisor"
+  senderType     String       // "meta", "visitor" (chat web) o "advisor"
   sourceType     String       @default("DIRECT") // "DIRECT" o "COMMENT"
   sourceId       String?      // ID del mensaje o comentario en Meta
   mediaUrl       String?      // URL de imagen o video adjunto
