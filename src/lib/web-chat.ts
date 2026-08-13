@@ -80,6 +80,20 @@ setInterval(() => {
 }, 5 * 60 * 1000).unref?.();
 
 /**
+ * El push viaja como data-only y es la app de Android la que arma la
+ * notificación eligiendo el canal según este tipo. Los APK instalados se
+ * compilaron antes de que existiera el chat web, así que un tipo propio
+ * ("WEB_CHAT") les llega como desconocido y Android descarta el aviso en
+ * silencio: el mensaje entra al CRM pero el teléfono nunca suena.
+ *
+ * Por eso se reusa un tipo que la app ya conoce. El título deja claro que
+ * viene del chat, que es lo que el asesor necesita leer. Cuando todos los
+ * asesores tengan un APK que maneje su propio canal de chat, esto puede
+ * volver a "WEB_CHAT".
+ */
+const TIPO_AVISO_CHAT = "NEW_LEAD";
+
+/**
  * Avisa por push a los asesores de un mensaje entrante del chat web.
  *
  * Si el lead ya tiene un asesor asignado, el aviso va sólo a esa persona,
@@ -115,7 +129,7 @@ export async function notifyAdvisorsOfWebChat({
           userId: user.id,
           title: `💬 ${visitorName} escribió desde la web`,
           body,
-          type: "WEB_CHAT",
+          type: TIPO_AVISO_CHAT,
           leadId: leadId || undefined,
         })
       )
