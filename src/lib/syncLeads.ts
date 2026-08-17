@@ -93,18 +93,27 @@ export async function syncExternalLeads() {
           }
         });
 
-        // Notificación push para leads Minipie
-        if (isMinipie && assignedToId) {
+        // Notificación push para leads nuevos de la web (Lomas del Mar, Arena y Sol, etc).
+        // Dos resguardos, porque este sync reprocesa TODA la tabla externa en cada corrida:
+        //  - !existingLead: solo avisa la primera vez que el lead entra al CRM.
+        //  - isRecent: aunque el chequeo anterior falle (backfill, cambio de email,
+        //    restore de la base), nunca se reenvían avisos de leads antiguos.
+        const isRecent =
+          Date.now() - new Date(ext.createdAt).getTime() < 48 * 60 * 60 * 1000;
+
+        if (!existingLead && !isNewsletter && isRecent && assignedToId) {
           try {
             await createNotification({
               userId: assignedToId,
-              title: "🏠 Nuevo Lead Minipie",
-              body: `${ext.firstName} está interesado/a en ${ext.externalProject}`,
+              title: "🌐 Nuevo Lead Web",
+              body: ext.externalProject
+                ? `${ext.firstName} está interesado/a en ${ext.externalProject}`
+                : `${ext.firstName} envió una consulta desde aliminspa.cl`,
               leadId: upserted.id,
               type: "NEW_LEAD",
             });
           } catch (notifErr) {
-            console.error("Failed to send Minipie notification:", notifErr);
+            console.error("Failed to send web lead notification:", notifErr);
           }
         }
 

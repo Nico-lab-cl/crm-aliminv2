@@ -332,23 +332,13 @@ export async function POST(req: Request) {
     // Trigger notification if it's a new assignment
     if (!existingLead && assignedToId) {
       const { createNotification } = await import("@/lib/notifications");
-      if (isMinipie) {
-        await createNotification({
-          userId: assignedToId,
-          title: "🏠 Nuevo Lead Minipie",
-          body: `${leadData.firstName} está interesado/a en ${leadData.interests}`,
-          leadId: lead.id,
-          type: "NEW_LEAD",
-        });
-      } else {
-        await createNotification({
-          userId: assignedToId,
-          title: "Nuevo Lead Asignado (Auto) 🤖",
-          body: `Se te ha asignado un nuevo lead de ${leadData.source}: ${leadData.firstName} ${leadData.lastName || ''}`,
-          leadId: lead.id,
-          type: "ASSIGNMENT",
-        });
-      }
+      await createNotification({
+        userId: assignedToId,
+        title: "Nuevo Lead Asignado (Auto) 🤖",
+        body: `Se te ha asignado un nuevo lead de ${leadData.source}: ${leadData.firstName} ${leadData.lastName || ''}`,
+        leadId: lead.id,
+        type: "ASSIGNMENT",
+      });
     }
 
     return NextResponse.json(lead);
