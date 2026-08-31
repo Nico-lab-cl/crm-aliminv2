@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { WEB_CHAT_PLATFORM } from "@/lib/web-chat";
+import { marcarContactado } from "@/lib/followups";
 
 export async function POST(req: Request) {
   const session = (await getServerSession(authOptions as any)) as any;
@@ -82,7 +83,13 @@ export async function POST(req: Request) {
       }
     });
 
-    // 5. Mover la conversación al tope de la bandeja: crear el mensaje por sí
+    // 5. Responderle al cliente es atenderlo: se apagan los recordatorios de
+    //    seguimiento sin que el asesor tenga que acordarse del interruptor de
+    //    la ficha. Es lo que hace que la marca de contactado sirva en la
+    //    práctica: nadie toca un interruptor después de contestar.
+    await marcarContactado(conversation.leadId, senderId);
+
+    // 6. Mover la conversación al tope de la bandeja: crear el mensaje por sí
     //    solo no toca updatedAt, que es el campo por el que se ordena.
     if (esChatWeb) {
       await (prisma as any).conversation.update({

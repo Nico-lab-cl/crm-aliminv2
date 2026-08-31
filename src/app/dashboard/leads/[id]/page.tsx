@@ -6,7 +6,7 @@ import {
   Mail, User as UserIcon, Smartphone, Map as MapIcon, 
   Edit3, Save, ChevronRight, Tent as Landscape,
   Meh, Smile, Laugh, Megaphone, ExternalLink, History,
-  ChevronDown, UserCheck, PenTool, X, FileCheck
+  ChevronDown, UserCheck, PenTool, X, FileCheck, CheckCircle2, Clock
 } from "lucide-react";
 import { getAdVideoUrl } from "@/lib/adVideos";
 import { getAdImages } from "@/lib/adImages";
@@ -31,6 +31,9 @@ interface Lead {
   lastActivity?: string;
   assignedToId?: string;
   assignedTo?: { name: string; image?: string };
+  contacted?: boolean;
+  contactedAt?: string | null;
+  contactedBy?: { name: string } | null;
 }
 
 interface UserOption {
@@ -57,6 +60,7 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
   const [note, setNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [updatingRating, setUpdatingRating] = useState(false);
+  const [updatingContacted, setUpdatingContacted] = useState(false);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [isAssignDropdownOpen, setIsAssignDropdownOpen] = useState(false);
   const [assigningLead, setAssigningLead] = useState(false);
@@ -147,6 +151,53 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
       console.error("Error updating rating:", error);
     } finally {
       setUpdatingRating(false);
+    }
+  };
+
+  /**
+   * Marca o desmarca que este cliente ya fue atendido.
+   *
+   * Es lo que apaga los recordatorios de 5 minutos, 30 minutos y 1 día. Se
+   * marca solo cuando el asesor le responde por el chat; este interruptor es
+   * para el resto de los casos, que son la mayoría: la llamada telefónica y el
+   * WhatsApp, que el CRM no puede ver.
+   */
+  const handleContactedToggle = async () => {
+    if (!lead || updatingContacted) return;
+    const nuevoValor = !lead.contacted;
+    setUpdatingContacted(true);
+
+    // Actualización optimista: el interruptor tiene que responder al toque
+    // aunque la red del asesor esté lenta.
+    setLead({ ...lead, contacted: nuevoValor });
+
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/contacted`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contacted: nuevoValor }),
+      });
+
+      if (res.ok) {
+        const datos = await res.json();
+        setLead((actual) =>
+          actual
+            ? {
+                ...actual,
+                contacted: datos.contacted,
+                contactedAt: datos.contactedAt,
+                contactedBy: datos.contactedBy,
+              }
+            : actual
+        );
+      } else {
+        setLead((actual) => (actual ? { ...actual, contacted: !nuevoValor } : actual));
+      }
+    } catch (error) {
+      console.error("Error updating contacted:", error);
+      setLead((actual) => (actual ? { ...actual, contacted: !nuevoValor } : actual));
+    } finally {
+      setUpdatingContacted(false);
     }
   };
 
@@ -308,6 +359,68 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
           bgColor="bg-[#D4AF37]" 
           onClick={() => handleInteraction("EMAIL")}
         />
+      </div>
+
+      {/* Marca de contacto: es lo que apaga los recordatorios de seguimiento */}
+      <div className="px-4 mb-6">
+        <button
+          onClick={handleContactedToggle}
+          disabled={updatingContacted}
+          className={clsx(
+            "w-full rounded-2xl p-4 border shadow-sm flex items-center gap-4 text-left transition-all active:scale-[0.99] disabled:opacity-60",
+            lead.contacted
+              ? "bg-emerald-50 border-emerald-200"
+              : "bg-white border-amber-200"
+          )}
+        >
+          <div
+            className={clsx(
+              "w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0",
+              lead.contacted ? "bg-emerald-500 text-white" : "bg-amber-100 text-amber-600"
+            )}
+          >
+            {lead.contacted ? <CheckCircle2 size={22} /> : <Clock size={22} />}
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <p
+              className={clsx(
+                "text-sm font-bold leading-tight",
+                lead.contacted ? "text-emerald-800" : "text-amber-800"
+              )}
+            >
+              {lead.contacted ? "Ya lo contactaste" : "Pendiente de contactar"}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+              {lead.contacted
+                ? lead.contactedAt
+                  ? `Marcado el ${new Date(lead.contactedAt).toLocaleDateString("es-CL", {
+                      day: "2-digit",
+                      month: "2-digit",
+                    })} a las ${new Date(lead.contactedAt).toLocaleTimeString("es-CL", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}${lead.contactedBy?.name ? ` por ${lead.contactedBy.name}` : ""}`
+                  : "Toca para marcarlo como pendiente de nuevo"
+                : "Te van a llegar recordatorios hasta que lo marques. Toca aquí cuando lo hayas atendido."}
+            </p>
+          </div>
+
+          {/* Interruptor */}
+          <div
+            className={clsx(
+              "w-12 h-7 rounded-full p-1 flex-shrink-0 transition-colors",
+              lead.contacted ? "bg-emerald-500" : "bg-slate-200"
+            )}
+          >
+            <div
+              className={clsx(
+                "w-5 h-5 rounded-full bg-white shadow transition-transform",
+                lead.contacted && "translate-x-5"
+              )}
+            />
+          </div>
+        </button>
       </div>
 
       {/* Interest Rating (Emojis) */}

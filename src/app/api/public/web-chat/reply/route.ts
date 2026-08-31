@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { WEB_CHAT_PLATFORM, checkWebChatKey, rateLimit } from "@/lib/web-chat";
+import { marcarContactado } from "@/lib/followups";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,10 @@ export async function POST(req: Request) {
       },
       select: { id: true, createdAt: true },
     });
+
+    // Responder al cliente cuenta como haberlo atendido: corta los
+    // recordatorios de seguimiento igual que el interruptor de la ficha.
+    await marcarContactado(conversation.leadId, advisor.id);
 
     // Mueve la conversación al tope de la bandeja y reabre el aviso al visitante.
     await prisma.conversation.update({
