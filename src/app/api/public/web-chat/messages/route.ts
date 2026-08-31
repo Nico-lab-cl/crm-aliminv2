@@ -60,6 +60,9 @@ export async function GET(req: Request) {
         senderType: true,
         createdAt: true,
         sender: { select: { name: true, image: true } },
+        // Metadatos del adjunto, sin el binario: el sitio público pide el
+        // archivo aparte y lo reenvía por su propio servidor.
+        media: { select: { id: true, kind: true, mimeType: true, durationMs: true } },
       },
     });
 
@@ -75,12 +78,23 @@ export async function GET(req: Request) {
     `;
 
     return NextResponse.json({
-      messages: messages.map((m) => ({
+      messages: messages.map((m: any) => ({
         id: m.id,
         text: m.text,
         deAsesor: m.senderType === "advisor",
         autor: m.senderType === "advisor" ? m.sender?.name || "Asesor" : null,
         createdAt: m.createdAt,
+        // El widget recibe el id del adjunto, no una URL del CRM. La URL
+        // definitiva la arma el sitio público contra su propio dominio, para
+        // que el navegador del visitante nunca llame al CRM directamente.
+        adjunto: m.media
+          ? {
+              id: m.media.id,
+              tipo: m.media.kind,
+              mimeType: m.media.mimeType,
+              duracionMs: m.media.durationMs,
+            }
+          : null,
       })),
     });
   } catch (error) {

@@ -19,6 +19,12 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
           include: {
             sender: {
                 select: { name: true, image: true }
+            },
+            // Solo los metadatos del adjunto. La columna "data" jamás se pide
+            // acá: son megabytes por mensaje y esta consulta trae la
+            // conversación completa. El binario lo sirve /api/media/[id].
+            media: {
+                select: { id: true, kind: true, mimeType: true, durationMs: true, sizeBytes: true }
             }
           }
         }

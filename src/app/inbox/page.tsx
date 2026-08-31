@@ -383,8 +383,11 @@ export default function InboxPage() {
                       <span className="text-slate-400 font-black text-[9px] uppercase tracking-tighter opacity-70 flex-shrink-0">Tú:</span>
                     )}
                     {conv.messages[0]?.mediaUrl ? (
-                      <span className="flex items-center gap-1 italic text-slate-400">
-                        📷 Imagen o adjunto
+                      /* El texto del mensaje ya describe el adjunto ("🎤 Mensaje
+                         de voz", "📷 Foto", "🎥 Video"), así que la vista previa
+                         distingue un audio de una foto sin abrir la conversación. */
+                      <span className="flex items-center gap-1 italic text-slate-400 truncate">
+                        {conv.messages[0].text || "📎 Adjunto"}
                       </span>
                     ) : (
                       conv.messages[0] ? conv.messages[0].text : "Sin mensajes"
