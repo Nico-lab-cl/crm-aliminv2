@@ -15,7 +15,22 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     companion object {
         private const val TAG = "FCMService"
-        private const val CHANNEL_ID = "crm_leads_channel"
+
+        /**
+         * Canales de notificacion.
+         *
+         * Antes habia uno solo y todo sonaba igual: un lead nuevo, un mensaje de
+         * un cliente y un recordatorio de seguimiento eran indistinguibles sin
+         * mirar la pantalla. Ahora son tres, y cada uno se puede silenciar por
+         * separado desde los ajustes del telefono sin perder los otros dos.
+         *
+         * El id del primero se mantiene tal cual estaba a proposito: es el que
+         * declara el AndroidManifest como canal por omision, y cambiarlo dejaria
+         * a los asesores con un canal huerfano ya configurado en su telefono.
+         */
+        private const val CANAL_LEADS = "crm_leads_channel"
+        private const val CANAL_CHAT = "crm_chat_channel"
+        private const val CANAL_SEGUIMIENTO = "crm_followup_channel"
     }
 
     override fun onNewToken(token: String) {
@@ -31,27 +46,75 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         val title = message.notification?.title ?: message.data["title"] ?: "Nuevo Lead"
         val body = message.notification?.body ?: message.data["body"] ?: "Se te ha asignado un nuevo cliente"
         val leadId = message.data["leadId"]
+        val tipo = message.data["type"] ?: ""
 
-        showNotification(title, body, leadId)
+        showNotification(title, body, leadId, tipo)
     }
 
-    private fun showNotification(title: String, body: String, leadId: String?) {
+    /**
+     * Elige el canal segun el tipo que manda el CRM.
+     *
+     * Cualquier tipo desconocido cae en el canal de leads en vez de descartarse.
+     * Es deliberado: si manana el CRM inventa un tipo nuevo y esta app todavia
+     * no lo conoce, el asesor igual escucha el aviso. Una notificacion en el
+     * canal equivocado es un problema menor; una que nunca suena le cuesta un
+     * cliente al negocio.
+     */
+    private fun canalPara(tipo: String): String = when {
+        tipo.startsWith("FOLLOWUP") -> CANAL_SEGUIMIENTO
+        tipo == "WEB_CHAT" || tipo == "CHAT" || tipo == "MESSAGE" -> CANAL_CHAT
+        else -> CANAL_LEADS
+    }
+
+    private fun crearCanales(notificationManager: NotificationManager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        val leads = NotificationChannel(
+            CANAL_LEADS,
+            "Leads Asignados",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Notificaciones de nuevos leads asignados"
+            enableVibration(true)
+            vibrationPattern = longArrayOf(0, 300, 200, 300)
+            setShowBadge(true)
+        }
+
+        val chat = NotificationChannel(
+            CANAL_CHAT,
+            "Mensajes de clientes",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Mensajes, fotos y audios que escriben los clientes por el chat de la web"
+            enableVibration(true)
+            // Vibracion mas corta y doble: se distingue de un lead nuevo con el
+            // telefono en el bolsillo, sin tener que mirar.
+            vibrationPattern = longArrayOf(0, 150, 100, 150)
+            setShowBadge(true)
+        }
+
+        val seguimiento = NotificationChannel(
+            CANAL_SEGUIMIENTO,
+            "Recordatorios de seguimiento",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Avisos de clientes que llevan rato esperando sin que nadie los contacte"
+            enableVibration(true)
+            vibrationPattern = longArrayOf(0, 500, 250, 500)
+            setShowBadge(true)
+        }
+
+        // createNotificationChannels es idempotente: volver a crear un canal que
+        // ya existe no pisa lo que el asesor haya cambiado en los ajustes.
+        notificationManager.createNotificationChannels(listOf(leads, chat, seguimiento))
+    }
+
+    private fun showNotification(title: String, body: String, leadId: String?, tipo: String) {
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-        // Create notification channel (required for Android 8.0+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Leads Asignados",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Notificaciones de nuevos leads asignados"
-                enableVibration(true)
-                vibrationPattern = longArrayOf(0, 300, 200, 300)
-                setShowBadge(true)
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
+        crearCanales(notificationManager)
+
+        val canal = canalPara(tipo)
 
         // Intent to open the app when notification is tapped
         val intent = Intent(this, MainActivity::class.java).apply {
@@ -61,14 +124,19 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             }
         }
 
+        // El requestCode tiene que ser distinto por lead: con uno fijo, Android
+        // reutiliza el PendingIntent anterior y todas las notificaciones abren
+        // la ficha del primer lead que llego.
         val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+            this,
+            leadId?.hashCode() ?: 0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(this, canal)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(body)
@@ -80,8 +148,18 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .build()
 
-        // Use unique ID for each notification
-        val notificationId = System.currentTimeMillis().toInt()
+        // Los recordatorios de seguimiento de un mismo lead se reemplazan entre
+        // si: el de 30 minutos pisa al de 5, y el del dia pisa a los dos. Sin
+        // esto el asesor termina con tres avisos apilados del mismo cliente, que
+        // es ruido, no informacion.
+        //
+        // Todo lo demas usa un id unico para que no se pisen mensajes distintos.
+        val notificationId = if (tipo.startsWith("FOLLOWUP") && leadId != null) {
+            leadId.hashCode()
+        } else {
+            System.currentTimeMillis().toInt()
+        }
+
         notificationManager.notify(notificationId, notification)
     }
 }

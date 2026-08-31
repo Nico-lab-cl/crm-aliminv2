@@ -8,6 +8,30 @@
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
+    <!--
+        Grabacion de mensajes de voz en el chat.
+
+        Sin RECORD_AUDIO, getUserMedia dentro del WebView falla y el boton de
+        microfono del CRM no puede funcionar por mas que este en pantalla.
+        MODIFY_AUDIO_SETTINGS lo pide el motor de audio del WebView para
+        configurar la captura; sin el, algunos fabricantes graban en silencio.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!--
+        Sacar fotos y grabar video se hace delegando en la app de camara del
+        telefono (ACTION_IMAGE_CAPTURE / ACTION_VIDEO_CAPTURE), no abriendo la
+        camara desde aca. Por eso NO se declara el permiso CAMERA: declararlo
+        obligaria a pedirlo en tiempo de ejecucion sin necesitarlo, y es un
+        permiso que asusta al usuario al instalar.
+
+        El microfono si se declara porque la grabacion de voz ocurre dentro del
+        WebView, en nuestro propio proceso.
+    -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
     <!-- Compatibilidad con llamadas y WhatsApp -->
     <queries>
         <intent>
@@ -17,6 +41,13 @@
         <intent>
             <action android:name="android.intent.action.DIAL" />
             <data android:scheme="tel" />
+        </intent>
+        <!-- Necesario para que el selector pueda ofrecer la camara del telefono -->
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.VIDEO_CAPTURE" />
         </intent>
     </queries>
 
@@ -28,7 +59,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.CRMAlimin"
         android:usesCleartextTraffic="true">
-        
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -49,6 +80,22 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!--
+            La app de camara escribe la foto en un archivo nuestro. Desde Android
+            7 no se le puede pasar una ruta directa (file://) a otra app: hay que
+            entregarle un permiso temporal sobre ese archivo, y eso es lo que
+            hace este proveedor.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- Default notification channel metadata -->
         <meta-data

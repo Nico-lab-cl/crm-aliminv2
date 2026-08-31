@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Rutas que el FileProvider puede compartir con otras apps.
+
+    Solo se expone la carpeta de imagenes de la cache privada de la app, que es
+    donde se deja la foto temporal mientras la camara la escribe y el WebView la
+    sube. No se expone almacenamiento externo ni la carpeta de datos completa:
+    lo que se comparte con otra app deberia ser exactamente lo necesario.
+-->
+<paths>
+    <cache-path name="capturas" path="capturas/" />
+</paths>

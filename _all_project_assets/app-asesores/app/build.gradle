@@ -12,8 +12,14 @@ android {
         applicationId "com.alimin.asesores"
         minSdk 24
         targetSdk 34
-        versionCode 2
-        versionName "1.1"
+        // Version 3: adjuntos en el chat (fotos, audios y videos), permiso de
+        // microfono dentro del WebView y canales de notificacion separados.
+        //
+        // El versionCode DEBE subir en cada APK que se reparta: Android se
+        // niega a instalar encima una version igual o menor y el asesor ve un
+        // "aplicacion no instalada" sin mas explicacion.
+        versionCode 3
+        versionName "2.0"
     }
 
     buildTypes {
