@@ -16,7 +16,8 @@ model User {
   phone         String?
   role          Role           @default(ASESOR)
   fcmToken      String?
-  leads         Lead[]         @relation("AssignedLeads")
+  leads          Lead[]        @relation("AssignedLeads")
+  contactedLeads Lead[]        @relation("ContactedLeads")
   messages      Message[]      // Relación con mensajes enviados
   notifications Notification[]
   reservations  Reservation[]  @relation("CreatedReservations")
@@ -65,6 +66,15 @@ model Lead {
   // Reminder flags for visits
   visitReminderSent1d Boolean @default(false)
   visitReminderSent1h Boolean @default(false)
+
+  // Contacto del asesor y escalamiento de seguimiento
+  contacted      Boolean   @default(false) // El asesor confirma que ya atendió al cliente
+  contactedAt    DateTime?
+  contactedById  String?
+  contactedBy    User?     @relation("ContactedLeads", fields: [contactedById], references: [id])
+  /// Último recordatorio de seguimiento enviado: 0 ninguno, 1 = 5 min, 2 = 30 min, 3 = 1 día.
+  /// Es un contador y no tres banderas para que el cron no pueda saltarse un paso ni repetirlo.
+  followupStage  Int       @default(0)
 
   // UTM Parameters for web leads
   utmSource    String?
@@ -122,7 +132,27 @@ model Message {
   mediaUrl       String?      // URL de imagen o video adjunto
   postId         String?      // ID de la publicación original
   postContent    String?      // Resumen o URL de imagen de la publicación (contexto)
+  media          MessageMedia? // Adjunto guardado en la base (imagen, audio o video)
   createdAt      DateTime     @default(now())
+}
+
+/// Adjunto de un mensaje: imagen, audio o video.
+///
+/// Vive en su propia tabla y no como columna de Message a propósito. El binario
+/// se guarda como bytea y la bandeja lista cientos de mensajes por consulta: si
+/// la columna estuviera en Message, cualquier findMany sin select explícito
+/// arrastraría megabytes de audio sin que nadie los haya pedido.
+model MessageMedia {
+  id         String   @id @default(uuid())
+  messageId  String   @unique
+  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  kind       String   // "image", "audio" o "video"
+  mimeType   String
+  fileName   String?
+  sizeBytes  Int
+  durationMs Int?     // Duración del audio o video, si el emisor la informó
+  data       Bytes    // El archivo en binario. Postgres lo mueve solo a TOAST.
+  createdAt  DateTime @default(now())
 }
 
 model IntegrationToken {

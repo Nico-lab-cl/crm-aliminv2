@@ -4,3 +4,8 @@
 
 public/videos/ads/v1_horizontal.mp4 -filter -diff -merge
 public/videos/ads/v2_horizontal.mp4 -filter -diff -merge
+
+# Las migraciones son texto para leer y copiar, no binarios. En LFS quedan como
+# un puntero ilegible en GitHub y quien clone sin git-lfs recibe un archivo
+# inservible justo cuando necesita correrlo contra produccion.
+scripts/*.sql -filter -diff -merge text
