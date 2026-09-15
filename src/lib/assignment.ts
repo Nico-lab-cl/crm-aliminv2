@@ -6,21 +6,27 @@ const ADVISORS = [
   { id: "77cea468-b4a5-44e6-aaa5-0a3f376affb1", name: "Barbara" },
 ];
 
+export const MARCELA_ID = "db1e6577-01b1-4615-b35e-0d50752452f3";
+export const ORLANDO_ID = "a6ce92ca-f1a1-4dcf-a042-fda1c31ca485";
+export const BARBARA_ID = "77cea468-b4a5-44e6-aaa5-0a3f376affb1";
+
 /**
- * Temporary redirection for Orlando -> Marcela
- * Duration: Active until 2026-04-03T22:00:00-03:00 (10 PM Chile)
+ * Reparto del round robin automatico (web y agendamientos).
+ * Orlando esta en 0 mientras se ausenta por temas personales: su parte pasa a Marcela.
+ * Para reincorporarlo basta con devolverle peso aqui (p. ej. 40/30/30) y volver a desplegar;
+ * un asesor con peso 0 nunca entra en la rueda aunque lo pidan los allowedIds.
  */
-const REDIRECTION_END = new Date("2026-04-03T01:00:00-03:00");
+const ADVISOR_WEIGHTS: Record<string, number> = {
+  [MARCELA_ID]: 70,
+  [ORLANDO_ID]: 0,
+  [BARBARA_ID]: 30,
+};
 
 /**
  * Manual exclusion for Marcela
  * Action: Set to TRUE to stop assigning leads to Marcela. Set to FALSE to resume.
  */
 const MARCELA_EXCLUDED = false;
-
-export const MARCELA_ID = "db1e6577-01b1-4615-b35e-0d50752452f3";
-export const ORLANDO_ID = "a6ce92ca-f1a1-4dcf-a042-fda1c31ca485";
-export const BARBARA_ID = "77cea468-b4a5-44e6-aaa5-0a3f376affb1";
 
 /**
  * GLOBAL SWITCH: Set to true to resume automatic assignments.
@@ -49,6 +55,45 @@ export function isWithinAssignmentWindow(): boolean {
   return true;
 }
 
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
+}
+
+/**
+ * Arma el ciclo de turnos que respeta los pesos: con 70/30 devuelve 10 turnos,
+ * 7 de Marcela y 3 de Barbara. Los reparte lo mas parejo posible (M,B,M,M,M,B,...)
+ * en vez de dar 7 seguidos y despues 3, para que ningun asesor quede sin leads
+ * durante media jornada.
+ */
+function buildRotation(advisors: { id: string; name: string }[]): string[] {
+  const weights = advisors.map(a => ADVISOR_WEIGHTS[a.id] ?? 0);
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+
+  // Sin pesos configurados caemos a un round robin parejo.
+  if (totalWeight <= 0) return advisors.map(a => a.id);
+
+  const slots = totalWeight / weights.reduce((acc, w) => gcd(acc, w), 0);
+  const given = advisors.map(() => 0);
+  const rotation: string[] = [];
+
+  for (let slot = 0; slot < slots; slot++) {
+    let best = 0;
+    let bestDeficit = -Infinity;
+    for (let i = 0; i < advisors.length; i++) {
+      // Cuantos turnos le deberian tocar a estas alturas del ciclo menos los que ya lleva.
+      const deficit = (weights[i] / totalWeight) * (slot + 1) - given[i];
+      if (deficit > bestDeficit + 1e-9) {
+        bestDeficit = deficit;
+        best = i;
+      }
+    }
+    given[best]++;
+    rotation.push(advisors[best].id);
+  }
+
+  return rotation;
+}
+
 export async function getNextAdvisorId(allowedIds?: string[], source?: string | null) {
   if (!AUTO_ASSIGNMENT_ENABLED) {
     console.log("[Auto-Assignment] Global assignment is currently DISABLED. Returning null.");
@@ -67,7 +112,10 @@ export async function getNextAdvisorId(allowedIds?: string[], source?: string | 
       ? ADVISORS.filter(a => allowedIds.includes(a.id))
       : [...ADVISORS];
 
-    // 2. Apply Marcela's manual exclusion
+    // 2. Drop advisors with no share (Orlando mientras esta ausente)
+    targetAdvisors = targetAdvisors.filter(a => (ADVISOR_WEIGHTS[a.id] ?? 0) > 0);
+
+    // 3. Apply Marcela's manual exclusion
     if (MARCELA_EXCLUDED) {
       console.log(`[Auto-Assignment] Marcela is manually EXCLUDED from automatic lead assignments.`);
       targetAdvisors = targetAdvisors.filter(a => a.id !== MARCELA_ID);
@@ -75,39 +123,23 @@ export async function getNextAdvisorId(allowedIds?: string[], source?: string | 
 
     if (targetAdvisors.length === 0) {
       console.warn("[Auto-Assignment] No advisors available after filtering. Falling back to default.");
-      return ADVISORS[0].id === MARCELA_ID && MARCELA_EXCLUDED
-        ? ADVISORS[1].id // Fallback to Orlando if Marcela is first and excluded
-        : ADVISORS[0].id;
+      return MARCELA_EXCLUDED ? BARBARA_ID : MARCELA_ID;
     }
 
-    // 3. Find the last lead assigned to one of our target advisors
-    const lastLead = await (prisma as any).lead.findFirst({
-      where: {
-        assignedToId: { in: targetAdvisors.map(a => a.id) }
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { assignedToId: true }
+    const rotation = buildRotation(targetAdvisors);
+
+    // 4. Posicion en el ciclo: cada asignacion suma exactamente un lead al grupo,
+    // asi que el total ya repartido nos dice que turno toca ahora.
+    const assignedCount = await (prisma as any).lead.count({
+      where: { assignedToId: { in: targetAdvisors.map(a => a.id) } }
     });
 
-    let nextIdx = 0;
-
-    if (lastLead && lastLead.assignedToId) {
-      // Find the index within our target group
-      const lastIdx = targetAdvisors.findIndex(a => a.id === lastLead.assignedToId);
-      // If the last advisor is no longer in the target list (e.g. was just excluded),
-      // round-robin continues from the next available advisor.
-      if (lastIdx !== -1) {
-        nextIdx = (lastIdx + 1) % targetAdvisors.length;
-      }
-    }
-    
-    const selectedId = targetAdvisors[nextIdx].id;
+    const selectedId = rotation[assignedCount % rotation.length];
 
     return selectedId;
   } catch (error) {
     console.error("Error calculating next advisor:", error);
-    // Safe fallback: Orlando if Marcela is excluded
-    return MARCELA_EXCLUDED ? ORLANDO_ID : MARCELA_ID;
+    // Safe fallback: Barbara si Marcela esta excluida
+    return MARCELA_EXCLUDED ? BARBARA_ID : MARCELA_ID;
   }
 }
-
