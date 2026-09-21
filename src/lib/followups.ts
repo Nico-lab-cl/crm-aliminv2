@@ -195,7 +195,31 @@ export async function marcarContactado(leadId: string | null | undefined, adviso
         followupStage: 3,
       },
     });
+
+    await avanzarEtapaAContactado(leadId);
   } catch (error) {
     console.error("[followups] No se pudo marcar el lead como contactado:", error);
   }
+}
+
+/**
+ * Saca al lead de NUEVO cuando ya fue atendido.
+ *
+ * Un lead atendido no puede seguir figurando como "Nuevo": es la primera cosa
+ * que mira cualquiera de los dos CRM para decidir a quien llamar, y un listado
+ * que dice "Nuevo" y "Atendido" en la misma fila no le sirve a nadie.
+ *
+ * Solo mueve NUEVO. Un lead en VISITA o RESERVADO ya paso por aca y retrocederlo
+ * seria perder informacion; por eso no es un "set status = CONTACTADO" a secas.
+ *
+ * Va en su propia consulta y no en el updateMany de arriba porque ese solo
+ * dispara cuando el lead todavia no estaba contactado. Este corre siempre, asi
+ * que tambien endereza los leads historicos que quedaron cruzados en cuanto el
+ * asesor vuelve a escribirles.
+ */
+export async function avanzarEtapaAContactado(leadId: string) {
+  await (prisma as any).lead.updateMany({
+    where: { id: leadId, status: { equals: "NUEVO", mode: "insensitive" } },
+    data: { status: "CONTACTADO" },
+  });
 }

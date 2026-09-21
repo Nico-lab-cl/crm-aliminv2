@@ -41,11 +41,28 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   try {
     const lead = await (prisma as any).lead.findUnique({
       where: { id: params.id },
-      select: { id: true, createdAt: true },
+      select: { id: true, createdAt: true, status: true },
     });
 
     if (!lead) {
       return NextResponse.json({ error: "El lead no existe" }, { status: 404 });
+    }
+
+    // La etapa acompaña a la marca, pero solo en los dos bordes.
+    //
+    // Un lead atendido no puede seguir figurando como "Nuevo": es lo primero
+    // que mira cualquiera de los dos CRM para decidir a quien llamar, y una fila
+    // que dice "Nuevo" y "Atendido" a la vez no le sirve a nadie.
+    //
+    // Al desmarcar pasa lo inverso, pero solo desde CONTACTADO: un lead en
+    // VISITA o RESERVADO ya avanzo mas alla de esto y retrocederlo por un toque
+    // en el interruptor seria borrar informacion que costo conseguir.
+    const etapa = (lead.status || "").trim().toUpperCase();
+    let nuevaEtapa: string | undefined;
+    if (contactado && etapa === "NUEVO") {
+      nuevaEtapa = "CONTACTADO";
+    } else if (!contactado && etapa === "CONTACTADO") {
+      nuevaEtapa = "NUEVO";
     }
 
     const actualizado = await (prisma as any).lead.update({
@@ -59,6 +76,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
             followupStage: 3,
             lastActivity: "Marcado como contactado",
             lastNoteAt: new Date(),
+            ...(nuevaEtapa ? { status: nuevaEtapa } : {}),
           }
         : {
             contacted: false,
@@ -70,9 +88,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
             followupStage: 0,
             lastActivity: "Marcado como pendiente de contactar",
             lastNoteAt: new Date(),
+            ...(nuevaEtapa ? { status: nuevaEtapa } : {}),
           },
       select: {
         id: true,
+        status: true,
         contacted: true,
         contactedAt: true,
         contactedById: true,

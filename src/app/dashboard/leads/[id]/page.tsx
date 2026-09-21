@@ -184,6 +184,10 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
           actual
             ? {
                 ...actual,
+                // El estado viene de vuelta porque marcar el contacto tambien
+                // saca al lead de NUEVO: sin esto el badge de la ficha seguiria
+                // diciendo "Nuevo Lead" hasta recargar la pagina.
+                status: datos.status ?? actual.status,
                 contacted: datos.contacted,
                 contactedAt: datos.contactedAt,
                 contactedBy: datos.contactedBy,
