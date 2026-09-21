@@ -28,6 +28,8 @@ export async function GET(req: Request) {
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
   const ownerId = searchParams.get("ownerId");
+  // Marca de atencion del asesor: "false" trae solo los pendientes de contactar.
+  const contacted = searchParams.get("contacted");
 
   // --- TRIGGER SYNC ---
   if (source === "web aliminspa.cl") {
@@ -60,7 +62,19 @@ export async function GET(req: Request) {
   }
 
   if (status && status !== "TODOS") {
-    where.status = status;
+    // Comparacion insensible a mayusculas a proposito.
+    //
+    // La columna la escriben los dos CRM que comparten esta base. El movil
+    // siempre uso mayusculas, pero el CRM web escribio un tiempo capitalizado
+    // ('Contactado'), y con igualdad exacta cada uno de esos leads desaparecia
+    // de este filtro sin que nada lo avisara. La normalizacion de la base ya
+    // dejo todo en mayusculas; esto es el seguro para que un valor mixto que
+    // entre por un import o por un script viejo no vuelva a esconder leads.
+    where.status = { equals: status, mode: "insensitive" };
+  }
+
+  if (contacted === "true" || contacted === "false") {
+    where.contacted = contacted === "true";
   }
 
   if (rating && rating !== "TODOS") {

@@ -28,6 +28,10 @@ interface Lead {
   updatedAt: string;
   source: string;
   isExternal?: boolean;
+  // El asesor confirmo que ya atendio al cliente. Es lo que apaga los
+  // recordatorios de seguimiento, y es distinto del estado del pipeline.
+  contacted?: boolean;
+  contactedAt?: string | null;
 }
 
 interface Pagination {
@@ -80,6 +84,8 @@ function DashboardContent() {
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [isRatingDropdownOpen, setIsRatingDropdownOpen] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  // Solo los leads que nadie marco como atendidos todavia.
+  const [pendingOnly, setPendingOnly] = useState(searchParams.get("pendientes") === "1");
 
   // Calendar state for Visitas view
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -155,6 +161,7 @@ function DashboardContent() {
     if (statusF !== "TODOS") params.set("status", statusF);
     if (ratingF !== "TODOS") params.set("rating", ratingF);
     if (ownerIdF !== "TODOS") params.set("ownerId", ownerIdF);
+    if (pendingOnly) params.set("pendientes", "1");
     if (visits) params.set("menu", "visits");
     if (signings) params.set("menu", "signings");
     
@@ -165,7 +172,7 @@ function DashboardContent() {
 
     const qs = params.toString();
     router.replace(`/dashboard${qs ? `?${qs}` : ""}`, { scroll: false });
-  }, [router, customStartDate, customEndDate]);
+  }, [router, customStartDate, customEndDate, pendingOnly]);
 
   // Helper to fetch leads with all current filters
   const fetchLeads = useCallback(async (page: number, q: string, project: string, dateRange: string, statusFilter: string, ratingFilter: string, ownerIdFilter: string, visitsOnly: boolean) => {
@@ -186,6 +193,7 @@ function DashboardContent() {
       if (ratingFilter !== "TODOS") url += `&rating=${encodeURIComponent(ratingFilter)}`;
       if (ownerIdFilter !== "TODOS") url += `&ownerId=${encodeURIComponent(ownerIdFilter)}`;
       if (visitsOnly) url += `&visited=true`;
+      if (pendingOnly) url += `&contacted=false`;
       
       const { start, end } = getDateRange(dateRange);
       if (start) url += `&startDate=${start}`;
@@ -207,7 +215,7 @@ function DashboardContent() {
     } finally {
       setLoading(false);
     }
-  }, [getDateRange]);
+  }, [getDateRange, pendingOnly]);
 
   // Fetch visits for calendar
   const fetchVisits = useCallback(async (month: string) => {
@@ -306,10 +314,13 @@ function DashboardContent() {
 
       return () => clearTimeout(delayDebounceFn);
     }
-  }, [status, router, currentPage, searchTerm, activeProject, dateFilter, activeStatus, activeRating, activeOwner, isVisitsActive, isSigningsActive, fetchLeads, syncUrlParams, customStartDate, customEndDate]);
+  }, [status, router, currentPage, searchTerm, activeProject, dateFilter, activeStatus, activeRating, activeOwner, pendingOnly, isVisitsActive, isSigningsActive, fetchLeads, syncUrlParams, customStartDate, customEndDate]);
 
   const getStatusColor = (status: string, rating?: string) => {
-    const current = rating || status;
+    // Se normaliza porque la columna la escriben los dos CRM y durante un tiempo
+    // el web guardo 'Contactado' capitalizado: sin esto, esos leads caian al
+    // default y se pintaban como frios.
+    const current = (rating || status || "").trim().toUpperCase();
     if (['VENTA', 'MUY INTERESADO', 'HOT'].includes(current)) return 'hot';
     if (['INTERESADO', 'INTERES', 'WARM'].includes(current)) return 'warm';
     if (['FRIO', 'COLD', 'NUEVO'].includes(current)) return 'cold';
@@ -987,6 +998,21 @@ function DashboardContent() {
           )}
         </div>
 
+        {/* Pendientes de contactar */}
+        <button
+          onClick={() => { setPendingOnly(!pendingOnly); setCurrentPage(1); }}
+          className={clsx(
+            "flex items-center gap-2 border px-4 py-2.5 rounded-2xl text-[10px] font-black transition-all active:scale-95 shadow-sm shrink-0",
+            pendingOnly
+              ? "bg-amber-500 border-amber-500 text-white"
+              : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+          )}
+          title="Mostrar solo los leads que nadie marco como atendidos"
+        >
+          <Clock size={12} />
+          Sin contactar
+        </button>
+
         {/* Owner Dropdown (ADMIN ONLY) */}
         {(session as any)?.user?.role === "ADMIN" && (
           <div className="relative shrink-0">
@@ -1100,6 +1126,11 @@ function DashboardContent() {
                     
                     <div className="flex items-center gap-3 text-slate-500 text-[10px] font-bold">
                       <span className="flex items-center gap-1"><Clock size={10} />{new Date(lead.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      {lead.contacted === false && (
+                        <span className="flex items-center gap-1 text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded uppercase tracking-tighter leading-none">
+                          <Clock size={9} />Sin contactar
+                        </span>
+                      )}
                       <span className="flex items-center gap-1 text-primary/70 uppercase tracking-tighter truncate max-w-[100px]">
                         <Share2 size={10} />{lead.source || 'WEB'}
                       </span>

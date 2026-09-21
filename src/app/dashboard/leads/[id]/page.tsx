@@ -209,12 +209,17 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
 
   if (!lead) return <div>Lead not found</div>;
 
+  // La columna "status" la escriben los dos CRM que comparten esta base y durante
+  // un tiempo el CRM web la guardo capitalizada ('Contactado'). Sin normalizar,
+  // esos leads caen al default del switch y el badge queda gris sin motivo.
+  const canonico = (v?: string) => (v || "").trim().toUpperCase();
+
   const getStatusColor = (status: string, rating?: string) => {
     if (rating === "VENTA") return "bg-green-500 text-white shadow-green-100";
     if (rating === "INTERESADO") return "bg-orange-400 text-white shadow-orange-100";
     if (rating === "FRIO") return "bg-slate-400 text-white shadow-slate-100";
-    
-    switch (status) {
+
+    switch (canonico(status)) {
       case "NUEVO": return "bg-primary text-white shadow-primary/20";
       case "CONTACTADO": return "bg-blue-500 text-white shadow-blue-100";
       case "VISITA": return "bg-emerald-500 text-white shadow-emerald-100";
@@ -227,7 +232,7 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     if (rating === "VENTA") return "VENTA";
     if (rating === "INTERESADO") return "INTERESADO";
     if (rating === "FRIO") return "FRIO";
-    return status === 'NUEVO' ? 'Nuevo Lead' : status;
+    return canonico(status) === 'NUEVO' ? 'Nuevo Lead' : status;
   };
 
   const handleInteraction = async (type: "WHATSAPP" | "PHONE" | "EMAIL") => {
@@ -241,7 +246,7 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
     const activity = `${type === "WHATSAPP" ? "WhatsApp" : type === "PHONE" ? "Llamada" : "Correo"} el ${timeStr}`;
 
     // Update status to CONTACTADO if it was NUEVO
-    const newStatus = lead.status === "NUEVO" ? "CONTACTADO" : lead.status;
+    const newStatus = canonico(lead.status) === "NUEVO" ? "CONTACTADO" : lead.status;
 
     try {
       // Optimistic update
