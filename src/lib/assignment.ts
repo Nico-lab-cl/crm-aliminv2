@@ -12,13 +12,13 @@ export const BARBARA_ID = "77cea468-b4a5-44e6-aaa5-0a3f376affb1";
 
 /**
  * Reparto del round robin automatico (web y agendamientos).
- * Orlando esta en 0 mientras se ausenta por temas personales: su parte pasa a Marcela.
- * Para reincorporarlo basta con devolverle peso aqui (p. ej. 40/30/30) y volver a desplegar;
+ * Orlando vuelve a la rueda tras su ausencia: 35 Marcela / 35 Orlando / 30 Barbara.
+ * Para sacar a alguien basta con dejarle peso 0 aqui y volver a desplegar;
  * un asesor con peso 0 nunca entra en la rueda aunque lo pidan los allowedIds.
  */
 const ADVISOR_WEIGHTS: Record<string, number> = {
-  [MARCELA_ID]: 70,
-  [ORLANDO_ID]: 0,
+  [MARCELA_ID]: 35,
+  [ORLANDO_ID]: 35,
   [BARBARA_ID]: 30,
 };
 
@@ -60,9 +60,9 @@ function gcd(a: number, b: number): number {
 }
 
 /**
- * Arma el ciclo de turnos que respeta los pesos: con 70/30 devuelve 10 turnos,
- * 7 de Marcela y 3 de Barbara. Los reparte lo mas parejo posible (M,B,M,M,M,B,...)
- * en vez de dar 7 seguidos y despues 3, para que ningun asesor quede sin leads
+ * Arma el ciclo de turnos que respeta los pesos: con 35/35/30 devuelve 20 turnos,
+ * 7 de Marcela, 7 de Orlando y 6 de Barbara. Los reparte lo mas parejo posible (M,O,B,M,O,B,...)
+ * en vez de dar 7 seguidos a cada uno, para que ningun asesor quede sin leads
  * durante media jornada.
  */
 function buildRotation(advisors: { id: string; name: string }[]): string[] {
@@ -112,7 +112,7 @@ export async function getNextAdvisorId(allowedIds?: string[], source?: string | 
       ? ADVISORS.filter(a => allowedIds.includes(a.id))
       : [...ADVISORS];
 
-    // 2. Drop advisors with no share (Orlando mientras esta ausente)
+    // 2. Drop advisors with no share (peso 0 en ADVISOR_WEIGHTS)
     targetAdvisors = targetAdvisors.filter(a => (ADVISOR_WEIGHTS[a.id] ?? 0) > 0);
 
     // 3. Apply Marcela's manual exclusion
