@@ -2,8 +2,8 @@
  * Temporizador interno del CRM.
  *
  * Next.js ejecuta este archivo una vez al arrancar el servidor. Se usa para que
- * los recordatorios de leads sin contactar corran solos, sin depender de n8n ni
- * de un crontab en el VPS.
+ * los recordatorios de leads sin contactar y el sync de leads web corran solos,
+ * sin depender de n8n ni de un crontab en el VPS.
  *
  * Por que dentro del proceso y no afuera: el aviso mas corto es a los 5
  * minutos, asi que hace falta una pasada por minuto. Un agendador externo es un
@@ -22,6 +22,7 @@
  */
 
 const CADA_MS = 60 * 1000;
+const SYNC_CADA_MS = 2 * 60 * 1000;
 
 export async function register() {
   // El import va DENTRO del if, y el if compara por igualdad en positivo.
@@ -66,5 +67,39 @@ export async function register() {
     timer.unref?.();
 
     console.log("[cron] Recordatorios de leads sin contactar activos: una pasada por minuto.");
+
+    // Leads del formulario de aliminspa.cl y visitas agendadas.
+    //
+    // Hasta ahora ningun temporizador los traia: el comentario de
+    // /api/cron/process-backlog decia que si, pero este archivo nunca lo hizo.
+    // Solo entraban cuando alguien abria el listado filtrado por la web, y
+    // entonces llegaban todos juntos -- las "oleadas" que reportaron los asesores.
+    //
+    // Se leen solo los ultimos 3 dias de la base externa: lo anterior ya entro
+    // por el sync completo del listado, y releer la tabla entera cada dos
+    // minutos reescribiria miles de leads por nada.
+    //
+    // No se llama a runProcessBacklog a proposito: ademas de sincronizar, reparte
+    // los leads viejos sin dueño de a uno, cada uno con su aviso, y eso seria
+    // una oleada nueva de leads antiguos.
+    const { syncExternalLeads, syncExternalBookings } = await import("./lib/syncLeads");
+
+    const sincronizar = async () => {
+      try {
+        await syncExternalLeads({ ultimosDias: 3 });
+      } catch (error) {
+        console.error("[cron] Fallo el sync de leads web:", error);
+      }
+      try {
+        await syncExternalBookings({ ultimosDias: 3 });
+      } catch (error) {
+        console.error("[cron] Fallo el sync de visitas agendadas:", error);
+      }
+    };
+
+    const timerSync = setInterval(sincronizar, SYNC_CADA_MS);
+    timerSync.unref?.();
+
+    console.log("[cron] Sync de leads web y visitas activo: una pasada cada 2 minutos.");
   }
 }

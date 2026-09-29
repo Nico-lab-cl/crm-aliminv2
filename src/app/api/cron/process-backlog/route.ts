@@ -5,8 +5,9 @@ export const dynamic = "force-dynamic";
 
 /**
  * Cron Job: Processes unassigned leads (the backlog) one by one.
- * Ahora tambien se dispara solo desde src/instrumentation.ts; esta ruta
- * queda disponible para disparo manual/verificacion.
+ * NO corre sola: src/instrumentation.ts sincroniza los leads web y las visitas
+ * cada 2 minutos, pero no reparte el backlog (repartiria leads viejos, cada uno
+ * con su aviso). Esta ruta queda para disparo manual.
  */
 export async function GET() {
   try {

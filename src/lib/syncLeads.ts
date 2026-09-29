@@ -6,25 +6,99 @@ import { createNotification } from "./notifications";
 
 const NICOLAS_ID = "initial-admin-id";
 
-export async function syncExternalLeads() {
+/**
+ * Un lead web encontrado despues de este plazo ya no se anuncia como nuevo:
+ * entra al CRM con su fecha real y sin escalera de recordatorios.
+ */
+const PLAZO_LEAD_NUEVO_MS = 48 * 60 * 60 * 1000;
+
+type OpcionesSync = {
+  /**
+   * Limita la lectura de la base externa a los ultimos N dias. El temporizador
+   * de instrumentation.ts lo usa para no reescribir la tabla completa cada dos
+   * minutos; el sync on-demand del listado sigue leyendo todo.
+   */
+  ultimosDias?: number;
+};
+
+/**
+ * Un solo sync de cada tipo a la vez dentro del proceso.
+ *
+ * El temporizador y el sync on-demand del listado pueden coincidir. Si corren
+ * en paralelo, los dos ven el mismo lead como nuevo y los dos mandan el aviso.
+ * Quien llega mientras hay uno en curso espera ese mismo resultado.
+ */
+const syncsEnCurso = new Map<string, Promise<any>>();
+
+function unaVezALaVez<T>(nombre: string, trabajo: () => Promise<T>): Promise<T> {
+  const enCurso = syncsEnCurso.get(nombre);
+  if (enCurso) return enCurso;
+  const promesa = trabajo().finally(() => syncsEnCurso.delete(nombre));
+  syncsEnCurso.set(nombre, promesa);
+  return promesa;
+}
+
+function esRegistroDuplicado(error: any) {
+  return error?.code === "P2002";
+}
+
+/**
+ * Arma el instante de una visita a partir de la fecha y la hora que el cliente
+ * eligio, que son hora de Chile. new Date("YYYY-MM-DDTHH:MM") las interpretaria
+ * con la zona del servidor, y el contenedor corre en UTC: la visita quedaba
+ * corrida 3 o 4 horas y el recordatorio de "visita en 1 hora" salia a destiempo.
+ */
+function instanteEnChile(fecha: string, hora: string): Date {
+  const [y, m, d] = fecha.split("-").map(Number);
+  let [hh, mm] = hora.split(":").map(Number);
+  if (!Number.isFinite(hh)) hh = 12;
+  if (!Number.isFinite(mm)) mm = 0;
+
+  const comoSiFueraUtc = Date.UTC(y, m - 1, d, hh, mm);
+  const partes = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Santiago",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date(comoSiFueraUtc));
+  const parte = (tipo: string) => Number(partes.find(p => p.type === tipo)?.value);
+  const vistoEnChile = Date.UTC(parte("year"), parte("month") - 1, parte("day"), parte("hour") % 24, parte("minute"));
+
+  // Desfase de Santiago respecto de UTC en esa fecha (-3h o -4h segun horario de verano).
+  const desfase = vistoEnChile - comoSiFueraUtc;
+  return new Date(comoSiFueraUtc - desfase);
+}
+
+export function syncExternalLeads(opciones: OpcionesSync = {}) {
+  // La clave separa el sync acotado del completo: el on-demand del listado no
+  // debe quedarse con el resultado de una pasada que solo miro 3 dias.
+  return unaVezALaVez(`leads-${opciones.ultimosDias ?? "todo"}`, () => syncExternalLeadsInterno(opciones));
+}
+
+async function syncExternalLeadsInterno({ ultimosDias }: OpcionesSync) {
   console.log("Starting external leads sync...");
-  
+
   try {
+    const filtroFecha = ultimosDias
+      ? `WHERE created_at > now() - interval '${Math.floor(ultimosDias)} days'`
+      : "";
+
     // 1. Fetch from External DB
     const res = await queryExternal(`
-      SELECT id, nombre as "firstName", '' as "lastName", email, celular as phone, 
+      SELECT id, nombre as "firstName", '' as "lastName", email, celular as phone,
              proyecto as "externalProject", ciudad as city, created_at as "createdAt",
-             utm_source as "utmSource", utm_medium as "utmMedium", 
-             utm_campaign as "utmCampaign", utm_content as "utmContent", 
+             utm_source as "utmSource", utm_medium as "utmMedium",
+             utm_campaign as "utmCampaign", utm_content as "utmContent",
              utm_term as "utmTerm"
       FROM leads
+      ${filtroFecha}
       UNION ALL
-      SELECT id, '' as "firstName", '' as "lastName", email, '' as phone, 
+      SELECT id, '' as "firstName", '' as "lastName", email, '' as phone,
              'Newsletter' as "externalProject", '' as city, created_at as "createdAt",
-             null as "utmSource", null as "utmMedium", 
-             null as "utmCampaign", null as "utmContent", 
+             null as "utmSource", null as "utmMedium",
+             null as "utmCampaign", null as "utmContent",
              null as "utmTerm"
       FROM newsletter_subscribers
+      ${filtroFecha}
     `);
 
     const externalLeads = res.rows;
@@ -57,51 +131,62 @@ export async function syncExternalLeads() {
         const isMinipie = ext.externalProject?.toUpperCase().includes('MINIPIE');
         const tags = isMinipie ? 'Minipie' : undefined;
 
-        const upserted = await (prisma as any).lead.upsert({
-          where: { email: emailLower },
-          update: {
-            firstName: ext.firstName,
-            phone: ext.phone,
-            source: ext.externalProject === 'Newsletter' ? 'Newsletter' : 'web aliminspa.cl',
-            city: ext.city,
-            interests: ext.externalProject !== 'Newsletter' ? ext.externalProject : undefined,
-            tags: tags,
-            utmSource: ext.utmSource,
-            utmMedium: ext.utmMedium,
-            utmCampaign: ext.utmCampaign,
-            utmContent: ext.utmContent,
-            utmTerm: ext.utmTerm,
-            createdAt: new Date(ext.createdAt),
-            assignedToId: assignedToId,
-          },
-          create: {
-            email: emailLower,
-            firstName: ext.firstName,
-            phone: ext.phone,
-            source: ext.externalProject === 'Newsletter' ? 'Newsletter' : 'web aliminspa.cl',
-            city: ext.city,
-            interests: ext.externalProject !== 'Newsletter' ? ext.externalProject : undefined,
-            tags: tags,
-            utmSource: ext.utmSource,
-            utmMedium: ext.utmMedium,
-            utmCampaign: ext.utmCampaign,
-            utmContent: ext.utmContent,
-            utmTerm: ext.utmTerm,
-            createdAt: new Date(ext.createdAt),
-            status: 'NUEVO',
-            assignedToId: assignedToId,
-          }
-        });
+        const datos = {
+          firstName: ext.firstName,
+          phone: ext.phone,
+          source: ext.externalProject === 'Newsletter' ? 'Newsletter' : 'web aliminspa.cl',
+          city: ext.city,
+          interests: ext.externalProject !== 'Newsletter' ? ext.externalProject : undefined,
+          tags: tags,
+          utmSource: ext.utmSource,
+          utmMedium: ext.utmMedium,
+          utmCampaign: ext.utmCampaign,
+          utmContent: ext.utmContent,
+          utmTerm: ext.utmTerm,
+          assignedToId: assignedToId,
+        };
 
-        // Notificación push para leads nuevos de la web (Lomas del Mar, Arena y Sol, etc).
-        // Dos resguardos, porque este sync reprocesa TODA la tabla externa en cada corrida:
-        //  - !existingLead: solo avisa la primera vez que el lead entra al CRM.
-        //  - isRecent: aunque el chequeo anterior falle (backfill, cambio de email,
-        //    restore de la base), nunca se reenvían avisos de leads antiguos.
+        if (existingLead) {
+          // createdAt no se toca: es la hora en que el lead entro al CRM, y de
+          // ella cuelgan los recordatorios de seguimiento y el orden del listado.
+          await (prisma as any).lead.update({
+            where: { email: emailLower },
+            data: datos,
+          });
+          syncedCount++;
+          continue;
+        }
+
+        // isRecent: el cliente escribio hace menos de 48 horas. Solo esos se
+        // anuncian como nuevos; un lead viejo que aparece tarde (backfill,
+        // cambio de email, restore de la base) entra en silencio.
         const isRecent =
-          Date.now() - new Date(ext.createdAt).getTime() < 48 * 60 * 60 * 1000;
+          Date.now() - new Date(ext.createdAt).getTime() < PLAZO_LEAD_NUEVO_MS;
 
-        if (!existingLead && !isNewsletter && isRecent && assignedToId) {
+        let created;
+        try {
+          created = await (prisma as any).lead.create({
+            data: {
+              ...datos,
+              email: emailLower,
+              status: 'NUEVO',
+              // Un lead reciente cuenta desde que llega al CRM, no desde que el
+              // cliente lleno el formulario. Si no, el sync atrasado lo mostraba
+              // con fecha pasada y los recordatorios de "5 minutos" y "1 dia"
+              // saltaban en el mismo minuto en que el asesor lo recibia.
+              createdAt: isRecent ? new Date() : new Date(ext.createdAt),
+              // Los viejos y los de Newsletter no entran a la escalera de
+              // recordatorios: nadie recibio un aviso de "nuevo" por ellos.
+              followupStage: isRecent && !isNewsletter ? 0 : 3,
+            },
+          });
+        } catch (createErr) {
+          // Otra instancia del CRM lo creo en paralelo: esa ya mando el aviso.
+          if (esRegistroDuplicado(createErr)) continue;
+          throw createErr;
+        }
+
+        if (!isNewsletter && isRecent && assignedToId) {
           try {
             await createNotification({
               userId: assignedToId,
@@ -109,7 +194,7 @@ export async function syncExternalLeads() {
               body: ext.externalProject
                 ? `${ext.firstName} está interesado/a en ${ext.externalProject}`
                 : `${ext.firstName} envió una consulta desde aliminspa.cl`,
-              leadId: upserted.id,
+              leadId: created.id,
               type: "NEW_LEAD",
             });
           } catch (notifErr) {
@@ -223,14 +308,23 @@ export async function syncReservationLeads() {
   }
 }
 
-export async function syncExternalBookings() {
+export function syncExternalBookings(opciones: OpcionesSync = {}) {
+  return unaVezALaVez(`visitas-${opciones.ultimosDias ?? "todo"}`, () => syncExternalBookingsInterno(opciones));
+}
+
+async function syncExternalBookingsInterno({ ultimosDias }: OpcionesSync) {
   console.log("Starting external bookings sync...");
   try {
+    const filtroFecha = ultimosDias
+      ? `AND created_at > now() - interval '${Math.floor(ultimosDias)} days'`
+      : "";
+
     // 1. Fetch bookings from External DB (bookings table)
     const res = await queryExternal(`
       SELECT id, nombre, email, celular, proyecto, fecha, hora, status, created_at as "createdAt"
       FROM bookings
       WHERE status = 'confirmed'
+      ${filtroFecha}
       ORDER BY created_at ASC
     `);
 
@@ -262,7 +356,7 @@ export async function syncExternalBookings() {
         const day = String(bookingDate.getDate()).padStart(2, '0');
         const dateStr = `${year}-${month}-${day}`;
         const timePart = booking.hora || "12:00";
-        const visitDate = new Date(`${dateStr}T${timePart}:00`);
+        const visitDate = instanteEnChile(dateStr, timePart);
 
         // Check if there is an existing lead with this email
         const existingLead = await (prisma as any).lead.findUnique({
@@ -323,7 +417,9 @@ export async function syncExternalBookings() {
         }
 
         // 4. Create notification
-        if (assignedToId) {
+        // Solo por visitas que todavia no ocurren: una agenda vieja que aparece
+        // tarde se registra igual, pero avisarla ya no le sirve a nadie.
+        if (assignedToId && visitDate.getTime() > Date.now()) {
           try {
             await createNotification({
               userId: assignedToId,
