@@ -147,12 +147,18 @@ async function syncExternalLeadsInterno({ ultimosDias }: OpcionesSync) {
         };
 
         if (existingLead) {
-          // createdAt no se toca: es la hora en que el lead entro al CRM, y de
-          // ella cuelgan los recordatorios de seguimiento y el orden del listado.
-          await (prisma as any).lead.update({
-            where: { email: emailLower },
-            data: datos,
-          });
+          // Un lead que ya esta en el CRM no se pisa. Casi siempre llego antes
+          // por el webhook de aliminspa.cl, que manda el nombre partido en
+          // firstName/lastName; reescribirle firstName con el nombre completo
+          // dejaba la ficha como "Juan Perez Perez". Tampoco se le cambia el
+          // asesor: un lead de un asesor que se suscribe al newsletter no debe
+          // pasar a Nicolas. Solo se completa el asesor si no tenia.
+          if (!existingLead.assignedToId && assignedToId) {
+            await (prisma as any).lead.update({
+              where: { id: existingLead.id },
+              data: { assignedToId },
+            });
+          }
           syncedCount++;
           continue;
         }
