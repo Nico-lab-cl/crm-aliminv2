@@ -341,3 +341,26 @@ export async function runResumenesWhatsapp() {
 
   return { activo: true, enviados };
 }
+
+/**
+ * Manda ahora un resumen marcado como prueba, con los mismos datos que tendra
+ * el real. Su clave lleva la hora, asi que no ocupa el lugar del resumen real
+ * ni impide repetir la prueba.
+ */
+export async function probarResumen(tipo: "diario" | "semanal") {
+  const ahora = ahoraEnChile();
+  const ayer = sumarDias(ahora.fecha, -1);
+
+  // El semanal de prueba toma la ultima semana lunes-domingo ya terminada.
+  const diasDesdeLunes = (ahora.diaSemana + 6) % 7;
+  const lunes = sumarDias(ahora.fecha, -diasDesdeLunes - 7);
+  const domingo = sumarDias(lunes, 6);
+
+  const [evento, titulo, desde, hasta]: [Evento, string, string, string] =
+    tipo === "diario"
+      ? ["RESUMEN_DIARIO", `🧪 *PRUEBA* · 📊 *Resumen de ayer* · ${fechaCorta(ayer)}`, ayer, ayer]
+      : ["RESUMEN_SEMANAL", `🧪 *PRUEBA* · 📊 *Resumen de la semana* · ${fechaCorta(lunes)} al ${fechaCorta(domingo)}`, lunes, domingo];
+
+  const clave = `PRUEBA:${evento}:${Date.now()}`;
+  return { clave, enviado: await armarYEnviar(evento, clave, titulo, desde, hasta) };
+}

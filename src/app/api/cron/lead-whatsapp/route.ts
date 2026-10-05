@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { runAvisosWhatsappLeads } from "@/lib/avisosWhatsappLeads";
-import { runResumenesWhatsapp } from "@/lib/resumenesWhatsapp";
+import { probarResumen, runResumenesWhatsapp } from "@/lib/resumenesWhatsapp";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +16,30 @@ export const dynamic = "force-dynamic";
  * impide mandarlo dos veces.
  *
  * Si existe CRON_SECRET, se exige.
+ *
+ * ?probar=diario o ?probar=semanal manda ese resumen ahora, marcado como
+ * prueba. Como publica en el grupo, siempre exige clave: CRON_SECRET, o si no
+ * existe, el token de Evolution (EVOLUTION_API_KEY).
  */
 export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const probar = url.searchParams.get("probar");
+
+  if (probar === "diario" || probar === "semanal") {
+    const esperada = process.env.CRON_SECRET || process.env.EVOLUTION_API_KEY;
+    const recibida =
+      req.headers.get("authorization")?.replace(/^Bearers+/i, "") || url.searchParams.get("secret");
+    if (!esperada || recibida !== esperada) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    try {
+      return NextResponse.json(await probarResumen(probar));
+    } catch (error: any) {
+      console.error("[cron/lead-whatsapp] Fallo la prueba:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+  }
+
   const secreto = process.env.CRON_SECRET;
 
   if (secreto) {
