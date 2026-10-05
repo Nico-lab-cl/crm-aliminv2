@@ -203,6 +203,7 @@ export async function POST(req: Request) {
       adName: data.adName || data.ad_name,
       formId: data.formId || data.form_id,
       interests: data.interests,
+      comoConocio: data.comoConocio || data.como_conocio || undefined,
     };
 
     // If it comes from Meta field_data array

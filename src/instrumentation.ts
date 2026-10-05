@@ -68,6 +68,33 @@ export async function register() {
 
     console.log("[cron] Recordatorios de leads sin contactar activos: una pasada por minuto.");
 
+    // Avisos de leads al grupo de WhatsApp del equipo. Quedan apagados
+    // mientras falten las variables de Evolution (ver avisosWhatsappLeads.ts).
+    // Va en su propio temporizador: una pasada puede tardar ~30 s por la pausa
+    // entre envios, y no debe atrasar los recordatorios push.
+    const { runAvisosWhatsappLeads } = await import("./lib/avisosWhatsappLeads");
+
+    let avisoEnCurso = false;
+    const pasadaWhatsapp = async () => {
+      // Sin solapamiento dentro del proceso; entre replicas lo cubre la clave
+      // unica de whatsapp_lead_avisos.
+      if (avisoEnCurso) return;
+      avisoEnCurso = true;
+      try {
+        const resultado = await runAvisosWhatsappLeads();
+        if (resultado.enviados > 0) {
+          console.log(`[cron] Avisos de leads a WhatsApp: ${resultado.enviados} enviados.`);
+        }
+      } catch (error) {
+        console.error("[cron] Fallo la pasada de avisos de WhatsApp:", error);
+      } finally {
+        avisoEnCurso = false;
+      }
+    };
+
+    const timerWhatsapp = setInterval(pasadaWhatsapp, CADA_MS);
+    timerWhatsapp.unref?.();
+
     // Leads del formulario de aliminspa.cl y visitas agendadas.
     //
     // Hasta ahora ningun temporizador los traia: el comentario de

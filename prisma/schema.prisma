@@ -53,6 +53,9 @@ model Lead {
   lote         String?
   etapa        String?
   interests    String?
+  /// Respuesta a "¿Cómo nos conociste?" del formulario de aliminspa.cl.
+  /// Columna agregada a mano en la base crm (octubre 2026).
+  comoConocio  String?
   rating       String?   @default("FRIO")
   lastNoteAt   DateTime?
   

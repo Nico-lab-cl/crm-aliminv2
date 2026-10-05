@@ -88,7 +88,11 @@ async function syncExternalLeadsInterno({ ultimosDias }: OpcionesSync) {
              proyecto as "externalProject", ciudad as city, created_at as "createdAt",
              utm_source as "utmSource", utm_medium as "utmMedium",
              utm_campaign as "utmCampaign", utm_content as "utmContent",
-             utm_term as "utmTerm"
+             utm_term as "utmTerm",
+             -- Por JSON y no por nombre de columna: como_conocio se agrego a
+             -- mano en la base de la web, y si en algun ambiente falta, esto
+             -- devuelve null en vez de tirar abajo el sync completo.
+             to_jsonb(leads) ->> 'como_conocio' as "comoConocio"
       FROM leads
       ${filtroFecha}
       UNION ALL
@@ -96,7 +100,7 @@ async function syncExternalLeadsInterno({ ultimosDias }: OpcionesSync) {
              'Newsletter' as "externalProject", '' as city, created_at as "createdAt",
              null as "utmSource", null as "utmMedium",
              null as "utmCampaign", null as "utmContent",
-             null as "utmTerm"
+             null as "utmTerm", null as "comoConocio"
       FROM newsletter_subscribers
       ${filtroFecha}
     `);
@@ -143,6 +147,7 @@ async function syncExternalLeadsInterno({ ultimosDias }: OpcionesSync) {
           utmCampaign: ext.utmCampaign,
           utmContent: ext.utmContent,
           utmTerm: ext.utmTerm,
+          comoConocio: ext.comoConocio || undefined,
           assignedToId: assignedToId,
         };
 
