@@ -73,6 +73,7 @@ export async function register() {
     // Va en su propio temporizador: una pasada puede tardar ~30 s por la pausa
     // entre envios, y no debe atrasar los recordatorios push.
     const { runAvisosWhatsappLeads } = await import("./lib/avisosWhatsappLeads");
+    const { runResumenesWhatsapp } = await import("./lib/resumenesWhatsapp");
 
     let avisoEnCurso = false;
     const pasadaWhatsapp = async () => {
@@ -87,6 +88,16 @@ export async function register() {
         }
       } catch (error) {
         console.error("[cron] Fallo la pasada de avisos de WhatsApp:", error);
+      }
+      // Resumen diario (11:00) y semanal (lunes 00:00). Va aparte para que un
+      // fallo en los avisos no impida el resumen, ni al reves.
+      try {
+        const resumenes = await runResumenesWhatsapp();
+        if (resumenes.enviados.length) {
+          console.log(`[cron] Resumenes a WhatsApp enviados: ${resumenes.enviados.join(", ")}`);
+        }
+      } catch (error) {
+        console.error("[cron] Fallo la pasada de resumenes de WhatsApp:", error);
       } finally {
         avisoEnCurso = false;
       }

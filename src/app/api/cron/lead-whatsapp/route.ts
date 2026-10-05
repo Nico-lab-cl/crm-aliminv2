@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runAvisosWhatsappLeads } from "@/lib/avisosWhatsappLeads";
+import { runResumenesWhatsapp } from "@/lib/resumenesWhatsapp";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,8 @@ export async function GET(req: Request) {
 
   try {
     const resultado = await runAvisosWhatsappLeads();
-    return NextResponse.json(resultado);
+    const resumenes = await runResumenesWhatsapp();
+    return NextResponse.json({ ...resultado, resumenes: resumenes.enviados });
   } catch (error: any) {
     console.error("[cron/lead-whatsapp] Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

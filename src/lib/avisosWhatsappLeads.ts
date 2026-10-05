@@ -31,7 +31,7 @@ import { MARCELA_ID, ORLANDO_ID, BARBARA_ID } from "./assignment";
  */
 
 /** Asesores de la rueda. Los leads de otros usuarios (Nicolas, admins) no se anuncian. */
-const ASESORES_ANUNCIABLES = [MARCELA_ID, ORLANDO_ID, BARBARA_ID];
+export const ASESORES_ANUNCIABLES = [MARCELA_ID, ORLANDO_ID, BARBARA_ID];
 
 const SIN_ATENDER_TRAS_MS = 30 * 60 * 1000;
 
@@ -42,7 +42,7 @@ const SIN_ATENDER_TRAS_MS = 30 * 60 * 1000;
 const ANTIGUEDAD_MAXIMA_MS = 3 * 24 * 60 * 60 * 1000;
 
 /** Un mensaje fallido se reintenta en pasadas siguientes hasta este tope. */
-const MAX_INTENTOS = 3;
+export const MAX_INTENTOS = 3;
 
 /**
  * Tope de mensajes por pasada y pausa entre uno y otro. WhatsApp castiga las
@@ -51,7 +51,7 @@ const MAX_INTENTOS = 3;
 const MAX_POR_CORRIDA = 10;
 const PAUSA_ENTRE_ENVIOS_MS = 3000;
 
-type Config = {
+export type Config = {
   url: string;
   apiKey: string;
   instancia: string;
@@ -67,7 +67,7 @@ type Config = {
  * anuncia; sin ella, el primer despliegue anunciaria de golpe los leads de los
  * ultimos tres dias.
  */
-function leerConfig(): Config | null {
+export function leerConfig(): Config | null {
   const url = process.env.EVOLUTION_API_URL?.replace(/\/+$/, "");
   const apiKey = process.env.EVOLUTION_API_KEY;
   const instancia = process.env.EVOLUTION_INSTANCE || "nico";
@@ -121,7 +121,7 @@ const SELECT_LEAD = {
 // Traduccion del origen a lenguaje del equipo
 // ---------------------------------------------------------------------------
 
-type TipoLead = "ANUNCIO" | "WEB";
+export type TipoLead = "ANUNCIO" | "WEB";
 
 const minus = (s: string | null | undefined) => (s || "").trim().toLowerCase();
 
@@ -199,7 +199,7 @@ const COMO_CONOCIO_LEGIBLE: Record<string, string> = {
   google: "Google / Búsqueda web",
 };
 
-function comoNosConocio(valor: string | null): string | null {
+export function comoNosConocio(valor: string | null): string | null {
   const limpio = valor?.trim();
   if (!limpio) return null;
   return COMO_CONOCIO_LEGIBLE[limpio.toLowerCase()] || limpio;
@@ -266,7 +266,12 @@ export function textoLeadSinAtender(lead: LeadAviso): string {
 // Registro y envio
 // ---------------------------------------------------------------------------
 
-type Evento = "LEAD_NUEVO" | "LEAD_SIN_ATENDER";
+/**
+ * Los resumenes usan la misma tabla: su "lead_id" es una clave del periodo,
+ * por ejemplo "RESUMEN_DIARIO:2026-10-04", y la clave unica impide mandarlos
+ * dos veces igual que con los avisos de un lead.
+ */
+export type Evento = "LEAD_NUEVO" | "LEAD_SIN_ATENDER" | "RESUMEN_DIARIO" | "RESUMEN_SEMANAL";
 
 /**
  * Reclama un aviso antes de mandarlo. Devuelve el id del registro si esta
@@ -278,7 +283,7 @@ type Evento = "LEAD_NUEVO" | "LEAD_SIN_ATENDER";
  * aviso perdido es menos dañino que uno duplicado en el grupo.
  */
 async function reclamarAviso(
-  leadId: string, evento: Evento, tipo: TipoLead, texto: string, cfg: Config
+  leadId: string, evento: Evento, tipo: TipoLead | null, texto: string, cfg: Config
 ): Promise<bigint | null> {
   const nuevo: { id: bigint }[] = await prisma.$queryRaw`
     INSERT INTO public.whatsapp_lead_avisos
@@ -317,10 +322,11 @@ async function enviarAlGrupo(texto: string, cfg: Config): Promise<string | null>
   }
 }
 
-async function avisar(
-  lead: LeadAviso, evento: Evento, tipo: TipoLead, texto: string, cfg: Config
+/** Devuelve true si el aviso salio en esta llamada. */
+export async function avisar(
+  clave: string, evento: Evento, tipo: TipoLead | null, texto: string, cfg: Config
 ): Promise<boolean> {
-  const registroId = await reclamarAviso(lead.id, evento, tipo, texto, cfg);
+  const registroId = await reclamarAviso(clave, evento, tipo, texto, cfg);
   if (registroId === null) return false;
 
   try {
@@ -331,7 +337,7 @@ async function avisar(
        WHERE id = ${registroId}`;
     return true;
   } catch (error: any) {
-    console.error(`[avisos-whatsapp] Fallo ${evento} del lead ${lead.id}:`, error);
+    console.error(`[avisos-whatsapp] Fallo ${evento} de ${clave}:`, error);
     await prisma.$executeRaw`
       UPDATE public.whatsapp_lead_avisos
          SET estado = 'ERROR', error = ${String(error?.message || error).slice(0, 1000)}
@@ -396,7 +402,7 @@ export async function runAvisosWhatsappLeads() {
 
     if (presupuesto < MAX_POR_CORRIDA) await pausa(PAUSA_ENTRE_ENVIOS_MS);
     presupuesto--;
-    if (await avisar(lead, "LEAD_NUEVO", tipo, textoLeadNuevo(lead, tipo), cfg)) enviados++;
+    if (await avisar(lead.id, "LEAD_NUEVO", tipo, textoLeadNuevo(lead, tipo), cfg)) enviados++;
   }
 
   // 2) Leads anunciados hace mas de 30 minutos que el asesor no ha contactado.
@@ -430,7 +436,7 @@ export async function runAvisosWhatsappLeads() {
 
     if (presupuesto < MAX_POR_CORRIDA) await pausa(PAUSA_ENTRE_ENVIOS_MS);
     presupuesto--;
-    if (await avisar(lead, "LEAD_SIN_ATENDER", fila.tipo_lead, textoLeadSinAtender(lead), cfg)) enviados++;
+    if (await avisar(lead.id, "LEAD_SIN_ATENDER", fila.tipo_lead, textoLeadSinAtender(lead), cfg)) enviados++;
   }
 
   return { activo: true, enviados };
