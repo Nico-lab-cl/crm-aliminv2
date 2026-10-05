@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   if (probar === "diario" || probar === "semanal") {
     const esperada = process.env.CRON_SECRET || process.env.EVOLUTION_API_KEY;
     const recibida =
-      req.headers.get("authorization")?.replace(/^Bearers+/i, "") || url.searchParams.get("secret");
+      req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || url.searchParams.get("secret");
     if (!esperada || recibida !== esperada) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
