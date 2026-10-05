@@ -224,7 +224,9 @@ function horaChile(fecha: Date) {
   const partes = new Intl.DateTimeFormat("es-CL", {
     timeZone: "America/Santiago",
     day: "2-digit", month: "2-digit", year: "numeric",
-    hour: "2-digit", minute: "2-digit", hour12: false,
+    // hourCycle h23 y no hour12:false: con hour12:false la medianoche sale
+    // como "24:56" en vez de "00:56".
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   }).formatToParts(fecha);
   const p = (tipo: string) => partes.find((x) => x.type === tipo)?.value || "";
   return `${p("day")}-${p("month")}-${p("year")} ${p("hour")}:${p("minute")}`;
@@ -302,17 +304,31 @@ async function reclamarAviso(
   return reintento.length > 0 ? reintento[0].id : null;
 }
 
+/**
+ * Error en que Evolution SI respondio, con un codigo de error: el mensaje no
+ * salio y se puede reintentar. Cualquier otra falla (tiempo agotado, conexion
+ * cortada) deja la duda de si se publico, y esa no se reintenta.
+ */
+class EvolutionRechazo extends Error {}
+
+/**
+ * Evolution tarda en responder los envios a grupos: tiene que leer los
+ * participantes antes de mandar. Con 15 s de espera el mensaje alcanzaba a
+ * publicarse, el CRM lo daba por fallido y lo reintentaba: salia dos veces.
+ */
+const ESPERA_EVOLUTION_MS = 60000;
+
 async function enviarAlGrupo(texto: string, cfg: Config): Promise<string | null> {
   const respuesta = await fetch(`${cfg.url}/message/sendText/${encodeURIComponent(cfg.instancia)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: cfg.apiKey },
     body: JSON.stringify({ number: cfg.grupo, text: texto }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(ESPERA_EVOLUTION_MS),
   });
 
   const cuerpo = await respuesta.text();
   if (!respuesta.ok) {
-    throw new Error(`Evolution respondio ${respuesta.status}: ${cuerpo.slice(0, 500)}`);
+    throw new EvolutionRechazo(`Evolution respondio ${respuesta.status}: ${cuerpo.slice(0, 500)}`);
   }
 
   try {
@@ -338,9 +354,16 @@ export async function avisar(
     return true;
   } catch (error: any) {
     console.error(`[avisos-whatsapp] Fallo ${evento} de ${clave}:`, error);
+    // Sin respuesta de Evolution no se sabe si el mensaje salio: se agotan los
+    // intentos para que no se reintente y no aparezca duplicado en el grupo.
+    const reintentable = error instanceof EvolutionRechazo;
+    const detalle = reintentable
+      ? String(error.message)
+      : `Sin respuesta de Evolution (puede haberse publicado, no se reintenta): ${error?.message || error}`;
     await prisma.$executeRaw`
       UPDATE public.whatsapp_lead_avisos
-         SET estado = 'ERROR', error = ${String(error?.message || error).slice(0, 1000)}
+         SET estado = 'ERROR', error = ${detalle.slice(0, 1000)},
+             intentos = CASE WHEN ${reintentable} THEN intentos ELSE ${MAX_INTENTOS} END
        WHERE id = ${registroId}`;
     return false;
   }
