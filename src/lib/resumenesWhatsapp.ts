@@ -17,14 +17,13 @@ import {
  *   - Semanal, el lunes a las 12:00 de Chile, con la semana lunes-domingo
  *     anterior.
  *
- * Ninguno lleva gasto ni costos: el grupo es del equipo de ventas.
+ * Ninguno lleva gasto ni costos: el grupo es del equipo de ventas. Tampoco
+ * las conversaciones de las campañas de WhatsApp: se sacaron a pedido, porque
+ * leerlas exige un token de Meta con permiso ads_read que el CRM no tiene.
  *
- * De donde sale cada numero:
- *   - Conversaciones de WhatsApp: de Meta (conjuntos de anuncios con destino
- *     WhatsApp). No hay otra fuente: esas conversaciones caen en el telefono
- *     de cada asesor, no en el CRM. Cada conjunto lleva el nombre del asesor.
- *   - Formularios de Meta y web: del CRM, por el origen del lead. Lo que Meta
- *     dice haber generado no se usa: lo que importa es lo que llego.
+ * Todo sale del CRM:
+ *   - Formularios de Meta y web: por el origen del lead. Lo que Meta dice
+ *     haber generado no se usa: lo que importa es lo que llego.
  *   - Atencion por asesor: Lead.contacted, que se marca solo cuando el asesor
  *     le escribe al cliente o a mano desde la ficha.
  *
@@ -36,10 +35,6 @@ import {
 const HORA_DIARIO = 11;
 /** Lunes a mediodia, una hora despues del diario del domingo. */
 const HORA_SEMANAL = 12;
-
-const META_API = "https://graph.facebook.com/v21.0";
-/** Cuenta publicitaria "Alimin Meta". */
-const CUENTA_META_POR_DEFECTO = "343467944575694";
 
 const NOMBRE_ASESOR: Record<string, string> = {
   [MARCELA_ID]: "Marcela",
@@ -94,93 +89,6 @@ function fechaCorta(fecha: string) {
 
 const porcentaje = (parte: number, total: number) => (total ? Math.round((parte / total) * 100) : 0);
 
-// ---------------------------------------------------------------------------
-// Meta
-// ---------------------------------------------------------------------------
-
-type DatosMeta = {
-  whatsapp: { asesor: string; conversaciones: number }[];
-};
-
-async function leerTodo(url: string): Promise<any[]> {
-  const filas: any[] = [];
-  let siguiente: string | null = url;
-  // Tope de paginas por las dudas: la cuenta tiene pocas decenas de conjuntos.
-  for (let i = 0; siguiente && i < 10; i++) {
-    const r: Response = await fetch(siguiente, { signal: AbortSignal.timeout(20000) });
-    const cuerpo: any = await r.json();
-    if (!r.ok || cuerpo.error) {
-      throw new Error(`Meta respondio ${r.status}: ${cuerpo.error?.message || "sin detalle"}`);
-    }
-    filas.push(...(cuerpo.data || []));
-    siguiente = cuerpo.paging?.next || null;
-  }
-  return filas;
-}
-
-/** El asesor sale del nombre del conjunto de anuncios ("... | BARBARA | ..."). */
-function asesorDelConjunto(nombre: string): string {
-  const n = nombre.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-  if (n.includes("barbara")) return "Bárbara";
-  if (n.includes("orlando")) return "Orlando";
-  if (n.includes("marcela")) return "Marcela";
-  return "Otros";
-}
-
-/**
- * Conversaciones iniciadas por conjunto de anuncios con destino WhatsApp.
- *
- * Usa el mismo token de la app de Meta con que el CRM ya recibe los mensajes
- * (META_PAGE_ACCESS_TOKEN). Para leer la cuenta publicitaria ese token
- * necesita el permiso ads_read; si no lo tiene, Meta responde con error, el
- * resumen sale igual con los datos del CRM y el motivo queda en el log.
- * META_ADS_TOKEN permite usar un token distinto solo para esto.
- */
-async function datosMeta(desde: string, hasta: string): Promise<DatosMeta> {
-  const token = process.env.META_ADS_TOKEN || process.env.META_PAGE_ACCESS_TOKEN;
-  if (!token) throw new Error("No hay token de Meta (META_PAGE_ACCESS_TOKEN)");
-  const cuenta = process.env.META_AD_ACCOUNT_ID || CUENTA_META_POR_DEFECTO;
-  const t = encodeURIComponent(token);
-
-  const estados = encodeURIComponent(JSON.stringify([
-    "ACTIVE", "PAUSED", "ARCHIVED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "IN_PROCESS", "WITH_ISSUES",
-  ]));
-  const conjuntos = await leerTodo(
-    `${META_API}/act_${cuenta}/adsets?fields=id,destination_type&effective_status=${estados}&limit=200&access_token=${t}`
-  );
-  const destino = new Map<string, string>(conjuntos.map((c) => [c.id, c.destination_type]));
-
-  const rango = encodeURIComponent(JSON.stringify({ since: desde, until: hasta }));
-  const filas = await leerTodo(
-    `${META_API}/act_${cuenta}/insights?level=adset&fields=adset_id,adset_name,actions` +
-      `&time_range=${rango}&limit=500&access_token=${t}`
-  );
-
-  const porAsesor = new Map<string, number>();
-
-  for (const fila of filas) {
-    const conversaciones = Number(
-      (fila.actions || []).find(
-        (a: any) => a.action_type === "onsite_conversion.messaging_conversation_started_7d"
-      )?.value || 0
-    );
-    // Si el conjunto ya no aparece en el listado (borrado), se deduce por sus resultados.
-    const tipo = destino.get(fila.adset_id) || (conversaciones > 0 ? "WHATSAPP" : "");
-
-    if (tipo === "WHATSAPP") {
-      const asesor = asesorDelConjunto(fila.adset_name || "");
-      porAsesor.set(asesor, (porAsesor.get(asesor) || 0) + conversaciones);
-    }
-  }
-
-  const whatsapp = Array.from(porAsesor.entries())
-    .map(([asesor, conversaciones]) => ({ asesor, conversaciones }))
-    .sort((a, b) => b.conversaciones - a.conversaciones);
-
-  return { whatsapp };
-}
-
-// ---------------------------------------------------------------------------
 // CRM
 // ---------------------------------------------------------------------------
 
@@ -246,20 +154,10 @@ async function datosCrm(desde: string, hasta: string): Promise<DatosCrm> {
 // Texto
 // ---------------------------------------------------------------------------
 
-export function textoResumen(titulo: string, crm: DatosCrm, meta: DatosMeta | { error: string }): string {
+export function textoResumen(titulo: string, crm: DatosCrm): string {
   const l: string[] = [titulo, ""];
 
-  if ("error" in meta) {
-    l.push("💬 *WhatsApp (anuncios)*: sin datos de Meta");
-  } else {
-    const total = meta.whatsapp.reduce((s, w) => s + w.conversaciones, 0);
-    l.push(`💬 *WhatsApp (anuncios)*: ${total} conversaciones`);
-    if (meta.whatsapp.length) {
-      l.push(`   ${meta.whatsapp.map((w) => `${w.asesor} ${w.conversaciones}`).join(" · ")}`);
-    }
-  }
-
-  l.push("", `📋 *Formulario de Meta*: ${crm.formularios} leads`);
+  l.push(`📋 *Formulario de Meta*: ${crm.formularios} leads`);
 
   l.push("", `🌐 *Web*: ${crm.web} leads`);
   if (crm.comoConocio.length) {
@@ -298,13 +196,7 @@ async function armarYEnviar(
   if (!cfg) return false;
 
   const crm = await datosCrm(desde, hasta);
-  // Si Meta falla, el resumen sale igual con lo del CRM: es lo que mas importa.
-  const meta = await datosMeta(desde, hasta).catch((error) => {
-    console.error("[resumenes-whatsapp] No se pudieron leer los datos de Meta:", error);
-    return { error: String(error?.message || error) };
-  });
-
-  return avisar(clave, evento, null, textoResumen(titulo, crm, meta), cfg);
+  return avisar(clave, evento, null, textoResumen(titulo, crm), cfg);
 }
 
 /**
