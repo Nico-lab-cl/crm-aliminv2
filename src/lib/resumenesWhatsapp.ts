@@ -13,9 +13,11 @@ import {
 /**
  * Resumenes de leads al grupo de WhatsApp del equipo.
  *
- *   - Diario, a las 11:00 de Chile, con el dia anterior. Sin plata.
- *   - Semanal, el lunes a las 00:00 de Chile, con la semana lunes-domingo
- *     anterior. Incluye el gasto de Meta.
+ *   - Diario, a las 11:00 de Chile, con el dia anterior.
+ *   - Semanal, el lunes a las 12:00 de Chile, con la semana lunes-domingo
+ *     anterior.
+ *
+ * Ninguno lleva gasto ni costos: el grupo es del equipo de ventas.
  *
  * De donde sale cada numero:
  *   - Conversaciones de WhatsApp: de Meta (conjuntos de anuncios con destino
@@ -32,8 +34,8 @@ import {
  */
 
 const HORA_DIARIO = 11;
-/** Lunes a las 00:00: el resumen semanal sale apenas termina la semana. */
-const HORA_SEMANAL = 0;
+/** Lunes a mediodia, una hora despues del diario del domingo. */
+const HORA_SEMANAL = 12;
 
 const META_API = "https://graph.facebook.com/v21.0";
 /** Cuenta publicitaria "Alimin Meta". */
@@ -90,7 +92,6 @@ function fechaCorta(fecha: string) {
   return `${d}-${m}-${a}`;
 }
 
-const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-CL")}`;
 const porcentaje = (parte: number, total: number) => (total ? Math.round((parte / total) * 100) : 0);
 
 // ---------------------------------------------------------------------------
@@ -98,9 +99,7 @@ const porcentaje = (parte: number, total: number) => (total ? Math.round((parte 
 // ---------------------------------------------------------------------------
 
 type DatosMeta = {
-  whatsapp: { asesor: string; conversaciones: number; gasto: number }[];
-  gastoFormularios: number;
-  gastoWeb: number;
+  whatsapp: { asesor: string; conversaciones: number }[];
 };
 
 async function leerTodo(url: string): Promise<any[]> {
@@ -129,13 +128,17 @@ function asesorDelConjunto(nombre: string): string {
 }
 
 /**
- * Gasto y conversaciones por conjunto de anuncios en el periodo. Los
- * conjuntos se clasifican por su destino: WHATSAPP, ON_AD (formulario de
- * Meta) o WEBSITE. El resto (alcance, reconocimiento) no entra al resumen.
+ * Conversaciones iniciadas por conjunto de anuncios con destino WhatsApp.
+ *
+ * Usa el mismo token de la app de Meta con que el CRM ya recibe los mensajes
+ * (META_PAGE_ACCESS_TOKEN). Para leer la cuenta publicitaria ese token
+ * necesita el permiso ads_read; si no lo tiene, Meta responde con error, el
+ * resumen sale igual con los datos del CRM y el motivo queda en el log.
+ * META_ADS_TOKEN permite usar un token distinto solo para esto.
  */
 async function datosMeta(desde: string, hasta: string): Promise<DatosMeta> {
-  const token = process.env.META_ADS_TOKEN;
-  if (!token) throw new Error("Falta la variable META_ADS_TOKEN");
+  const token = process.env.META_ADS_TOKEN || process.env.META_PAGE_ACCESS_TOKEN;
+  if (!token) throw new Error("No hay token de Meta (META_PAGE_ACCESS_TOKEN)");
   const cuenta = process.env.META_AD_ACCOUNT_ID || CUENTA_META_POR_DEFECTO;
   const t = encodeURIComponent(token);
 
@@ -149,16 +152,13 @@ async function datosMeta(desde: string, hasta: string): Promise<DatosMeta> {
 
   const rango = encodeURIComponent(JSON.stringify({ since: desde, until: hasta }));
   const filas = await leerTodo(
-    `${META_API}/act_${cuenta}/insights?level=adset&fields=adset_id,adset_name,spend,actions` +
+    `${META_API}/act_${cuenta}/insights?level=adset&fields=adset_id,adset_name,actions` +
       `&time_range=${rango}&limit=500&access_token=${t}`
   );
 
-  const porAsesor = new Map<string, { conversaciones: number; gasto: number }>();
-  let gastoFormularios = 0;
-  let gastoWeb = 0;
+  const porAsesor = new Map<string, number>();
 
   for (const fila of filas) {
-    const gasto = Number(fila.spend || 0);
     const conversaciones = Number(
       (fila.actions || []).find(
         (a: any) => a.action_type === "onsite_conversion.messaging_conversation_started_7d"
@@ -169,22 +169,15 @@ async function datosMeta(desde: string, hasta: string): Promise<DatosMeta> {
 
     if (tipo === "WHATSAPP") {
       const asesor = asesorDelConjunto(fila.adset_name || "");
-      const acumulado = porAsesor.get(asesor) || { conversaciones: 0, gasto: 0 };
-      acumulado.conversaciones += conversaciones;
-      acumulado.gasto += gasto;
-      porAsesor.set(asesor, acumulado);
-    } else if (tipo === "ON_AD") {
-      gastoFormularios += gasto;
-    } else if (tipo === "WEBSITE") {
-      gastoWeb += gasto;
+      porAsesor.set(asesor, (porAsesor.get(asesor) || 0) + conversaciones);
     }
   }
 
   const whatsapp = Array.from(porAsesor.entries())
-    .map(([asesor, d]) => ({ asesor, ...d }))
+    .map(([asesor, conversaciones]) => ({ asesor, conversaciones }))
     .sort((a, b) => b.conversaciones - a.conversaciones);
 
-  return { whatsapp, gastoFormularios, gastoWeb };
+  return { whatsapp };
 }
 
 // ---------------------------------------------------------------------------
@@ -253,9 +246,7 @@ async function datosCrm(desde: string, hasta: string): Promise<DatosCrm> {
 // Texto
 // ---------------------------------------------------------------------------
 
-export function textoResumen(
-  titulo: string, crm: DatosCrm, meta: DatosMeta | { error: string }, conPlata: boolean
-): string {
+export function textoResumen(titulo: string, crm: DatosCrm, meta: DatosMeta | { error: string }): string {
   const l: string[] = [titulo, ""];
 
   if ("error" in meta) {
@@ -263,29 +254,16 @@ export function textoResumen(
   } else {
     const total = meta.whatsapp.reduce((s, w) => s + w.conversaciones, 0);
     l.push(`💬 *WhatsApp (anuncios)*: ${total} conversaciones`);
-    if (conPlata) {
-      for (const w of meta.whatsapp) {
-        const cu = w.conversaciones ? ` · ${pesos(w.gasto / w.conversaciones)} c/u` : "";
-        l.push(`   ${w.asesor}: ${w.conversaciones} · ${pesos(w.gasto)}${cu}`);
-      }
-    } else if (meta.whatsapp.length) {
+    if (meta.whatsapp.length) {
       l.push(`   ${meta.whatsapp.map((w) => `${w.asesor} ${w.conversaciones}`).join(" · ")}`);
     }
   }
 
-  l.push("", `📋 *Formulario de Meta*: ${crm.formularios} leads en el CRM`);
-  if (conPlata && !("error" in meta) && meta.gastoFormularios > 0) {
-    const cu = crm.formularios ? ` · ${pesos(meta.gastoFormularios / crm.formularios)} por lead` : "";
-    l.push(`   Gasto: ${pesos(meta.gastoFormularios)}${cu}`);
-  }
+  l.push("", `📋 *Formulario de Meta*: ${crm.formularios} leads`);
 
-  l.push("", `🌐 *Web*: ${crm.web} leads en el CRM`);
+  l.push("", `🌐 *Web*: ${crm.web} leads`);
   if (crm.comoConocio.length) {
     l.push(`   🗣️ Nos conocieron por: ${crm.comoConocio.slice(0, 4).map(([c, n]) => `${c} ${n}`).join(" · ")}`);
-  }
-  if (conPlata && !("error" in meta) && meta.gastoWeb > 0) {
-    const cu = crm.web ? ` · ${pesos(meta.gastoWeb / crm.web)} por lead` : "";
-    l.push(`   Gasto en anuncios a la web: ${pesos(meta.gastoWeb)}${cu}`);
   }
 
   if (crm.manuales) l.push("", `✍️ *Ingresados a mano*: ${crm.manuales}`);
@@ -314,12 +292,10 @@ async function yaResuelto(clave: string, evento: Evento): Promise<boolean> {
 }
 
 async function armarYEnviar(
-  evento: Evento, clave: string, titulo: string, desde: string, hasta: string, conPlata: boolean
+  evento: Evento, clave: string, titulo: string, desde: string, hasta: string
 ) {
   const cfg = leerConfig();
   if (!cfg) return false;
-  // Permite mandar los resumenes a otro grupo (por ejemplo, uno de gerencia).
-  const cfgResumen = { ...cfg, grupo: process.env.LEADS_RESUMEN_GROUP || cfg.grupo };
 
   const crm = await datosCrm(desde, hasta);
   // Si Meta falla, el resumen sale igual con lo del CRM: es lo que mas importa.
@@ -328,7 +304,7 @@ async function armarYEnviar(
     return { error: String(error?.message || error) };
   });
 
-  return avisar(clave, evento, null, textoResumen(titulo, crm, meta, conPlata), cfgResumen);
+  return avisar(clave, evento, null, textoResumen(titulo, crm, meta), cfg);
 }
 
 /**
@@ -349,7 +325,7 @@ export async function runResumenesWhatsapp() {
     const clave = `RESUMEN_DIARIO:${dia}`;
     if (!(await yaResuelto(clave, "RESUMEN_DIARIO"))) {
       const titulo = `📊 *Resumen de ayer* · ${fechaCorta(dia)}`;
-      if (await armarYEnviar("RESUMEN_DIARIO", clave, titulo, dia, dia, false)) enviados.push(clave);
+      if (await armarYEnviar("RESUMEN_DIARIO", clave, titulo, dia, dia)) enviados.push(clave);
     }
   }
 
@@ -359,7 +335,7 @@ export async function runResumenesWhatsapp() {
     const clave = `RESUMEN_SEMANAL:${lunes}`;
     if (!(await yaResuelto(clave, "RESUMEN_SEMANAL"))) {
       const titulo = `📊 *Resumen de la semana* · ${fechaCorta(lunes)} al ${fechaCorta(domingo)}`;
-      if (await armarYEnviar("RESUMEN_SEMANAL", clave, titulo, lunes, domingo, true)) enviados.push(clave);
+      if (await armarYEnviar("RESUMEN_SEMANAL", clave, titulo, lunes, domingo)) enviados.push(clave);
     }
   }
 
