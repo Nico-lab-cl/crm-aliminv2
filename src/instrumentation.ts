@@ -74,6 +74,7 @@ export async function register() {
     // entre envios, y no debe atrasar los recordatorios push.
     const { runAvisosWhatsappLeads } = await import("./lib/avisosWhatsappLeads");
     const { runResumenesWhatsapp } = await import("./lib/resumenesWhatsapp");
+    const { runAvisosLeadScore } = await import("./lib/avisosLeadScore");
 
     let avisoEnCurso = false;
     const pasadaWhatsapp = async () => {
@@ -98,6 +99,16 @@ export async function register() {
         }
       } catch (error) {
         console.error("[cron] Fallo la pasada de resumenes de WhatsApp:", error);
+      }
+      // Avisos del lead score (lo calcula el CRM web en public.lead_score).
+      // Apagados mientras falte LEAD_SCORE_AVISOS_DESDE.
+      try {
+        const score = await runAvisosLeadScore();
+        if (score.enviados > 0) {
+          console.log(`[cron] Avisos de lead score: ${score.enviados} enviados.`);
+        }
+      } catch (error) {
+        console.error("[cron] Fallo la pasada de avisos de lead score:", error);
       } finally {
         avisoEnCurso = false;
       }

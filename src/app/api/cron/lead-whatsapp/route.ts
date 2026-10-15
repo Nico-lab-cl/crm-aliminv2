@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runAvisosWhatsappLeads } from "@/lib/avisosWhatsappLeads";
 import { probarResumen, runResumenesWhatsapp } from "@/lib/resumenesWhatsapp";
+import { probarResumenScore } from "@/lib/avisosLeadScore";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const probar = url.searchParams.get("probar");
 
-  if (probar === "diario" || probar === "semanal") {
+  if (probar === "diario" || probar === "semanal" || probar === "score" || probar === "score-vista") {
     const esperada = process.env.CRON_SECRET || process.env.EVOLUTION_API_KEY;
     const recibida =
       req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || url.searchParams.get("secret");
@@ -33,6 +34,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
     try {
+      // score-vista devuelve el texto del resumen del lead score sin mandarlo;
+      // score lo publica en el grupo marcado como PRUEBA.
+      if (probar === "score-vista") return NextResponse.json(await probarResumenScore("vista"));
+      if (probar === "score") return NextResponse.json(await probarResumenScore("enviar"));
       return NextResponse.json(await probarResumen(probar));
     } catch (error: any) {
       console.error("[cron/lead-whatsapp] Fallo la prueba:", error);

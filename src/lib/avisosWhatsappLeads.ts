@@ -309,7 +309,7 @@ async function reclamarAviso(
  * salio y se puede reintentar. Cualquier otra falla (tiempo agotado, conexion
  * cortada) deja la duda de si se publico, y esa no se reintenta.
  */
-class EvolutionRechazo extends Error {}
+export class EvolutionRechazo extends Error {}
 
 /**
  * Evolution tarda en responder los envios a grupos: tiene que leer los
@@ -318,7 +318,7 @@ class EvolutionRechazo extends Error {}
  */
 const ESPERA_EVOLUTION_MS = 60000;
 
-async function enviarAlGrupo(texto: string, cfg: Config): Promise<string | null> {
+export async function enviarAlGrupo(texto: string, cfg: Config): Promise<string | null> {
   const respuesta = await fetch(`${cfg.url}/message/sendText/${encodeURIComponent(cfg.instancia)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: cfg.apiKey },
