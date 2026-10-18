@@ -23,8 +23,8 @@ import {
  *   - Mensajes de WhatsApp de anuncios: de Meta (conversaciones iniciadas en
  *     los conjuntos de anuncios con destino WhatsApp). No hay otra fuente: esas
  *     conversaciones caen en el telefono de cada asesor, no en el CRM ni en
- *     Evolution. Cada conjunto lleva el nombre del asesor. Necesita
- *     META_ADS_TOKEN (token con ads_read); sin el, la linea no aparece.
+ *     Evolution. Cada conjunto lleva el nombre del asesor. Necesita un token
+ *     con ads_read: META_ADS_TOKEN o, de respaldo, META_PAGE_ACCESS_TOKEN.
  *   - Formularios de Meta y web: del CRM, por el origen del lead. Lo que Meta dice
  *     haber generado no se usa: lo que importa es lo que llego.
  *   - Atencion por asesor: Lead.contacted, que se marca solo cuando el asesor
@@ -134,11 +134,13 @@ function asesorDelConjunto(nombre: string): string {
  * Suma todos los conjuntos de cada asesor (el principal y los de prueba de
  * creativos).
  *
- * Devuelve null si no hay META_ADS_TOKEN: es el interruptor de la seccion. No
- * se usa META_PAGE_ACCESS_TOKEN porque no tiene ads_read y Meta lo rechaza.
+ * Usa META_ADS_TOKEN y, si no existe, el token que el CRM ya tiene
+ * (META_PAGE_ACCESS_TOKEN): los tokens de la app de Meta reciben ads_read,
+ * pero el de la pagina fue rechazado en octubre de 2026, asi que puede no
+ * servir. Devuelve null si no hay ningun token.
  */
 async function datosMeta(desde: string, hasta: string): Promise<DatosMeta | null> {
-  const token = process.env.META_ADS_TOKEN;
+  const token = process.env.META_ADS_TOKEN || process.env.META_PAGE_ACCESS_TOKEN;
   if (!token) return null;
   const cuenta = process.env.META_AD_ACCOUNT_ID || CUENTA_META_POR_DEFECTO;
   const t = encodeURIComponent(token);
@@ -291,15 +293,21 @@ async function yaResuelto(clave: string, evento: Evento): Promise<boolean> {
   return filas.length > 0;
 }
 
+/**
+ * Si Meta falla, el resumen sale igual con lo del CRM. Con META_ADS_TOKEN
+ * puesto avisa "sin datos de Meta"; con el token de la pagina de respaldo la
+ * linea simplemente no aparece, para no repetir lo de octubre. El motivo
+ * queda en el log y en `metaError`, que la prueba con vista=1 muestra.
+ */
 async function armarTexto(titulo: string, desde: string, hasta: string) {
   const crm = await datosCrm(desde, hasta);
-  // Si Meta falla, el resumen sale igual con lo del CRM y avisa que faltan
-  // esos datos; el motivo queda en el log.
+  let metaError: string | null = null;
   const meta = await datosMeta(desde, hasta).catch((error) => {
     console.error("[resumenes-whatsapp] No se pudieron leer los datos de Meta:", error);
-    return { error: String(error?.message || error) };
+    metaError = String(error?.message || error);
+    return process.env.META_ADS_TOKEN ? { error: metaError } : null;
   });
-  return textoResumen(titulo, crm, meta);
+  return { texto: textoResumen(titulo, crm, meta), metaError };
 }
 
 /** `destino` reemplaza al grupo: un numero (solo digitos) para las pruebas. */
@@ -309,7 +317,7 @@ async function armarYEnviar(
   const cfg = leerConfig();
   if (!cfg) return false;
 
-  const texto = await armarTexto(titulo, desde, hasta);
+  const { texto } = await armarTexto(titulo, desde, hasta);
   return avisar(clave, evento, null, texto, destino ? { ...cfg, grupo: destino } : cfg);
 }
 
@@ -374,7 +382,10 @@ export async function probarResumen(
       ? ["RESUMEN_DIARIO", `🧪 *PRUEBA* · 📊 *Resumen de ayer* · ${fechaCorta(ayer)}`, ayer, ayer]
       : ["RESUMEN_SEMANAL", `🧪 *PRUEBA* · 📊 *Resumen de la semana* · ${fechaCorta(lunes)} al ${fechaCorta(domingo)}`, lunes, domingo];
 
-  if (opciones.soloVista) return { texto: await armarTexto(titulo, desde, hasta) };
+  if (opciones.soloVista) {
+    const token = process.env.META_ADS_TOKEN ? "META_ADS_TOKEN" : process.env.META_PAGE_ACCESS_TOKEN ? "META_PAGE_ACCESS_TOKEN" : null;
+    return { tokenMeta: token, ...(await armarTexto(titulo, desde, hasta)) };
+  }
 
   const clave = `PRUEBA:${evento}:${Date.now()}`;
   return {
