@@ -20,7 +20,9 @@ export const dynamic = "force-dynamic";
  *
  * ?probar=diario o ?probar=semanal manda ese resumen ahora, marcado como
  * prueba. Como publica en el grupo, siempre exige clave: CRON_SECRET, o si no
- * existe, el token de Evolution (EVOLUTION_API_KEY).
+ * existe, el token de Evolution (EVOLUTION_API_KEY). Con &para=569XXXXXXXX
+ * va a ese numero en vez del grupo; con &vista=1 no manda nada y devuelve el
+ * texto.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -38,7 +40,13 @@ export async function GET(req: Request) {
       // score lo publica en el grupo marcado como PRUEBA.
       if (probar === "score-vista") return NextResponse.json(await probarResumenScore("vista"));
       if (probar === "score") return NextResponse.json(await probarResumenScore("enviar"));
-      return NextResponse.json(await probarResumen(probar));
+      const para = (url.searchParams.get("para") || "").replace(/\D/g, "");
+      if (para && (para.length < 8 || para.length > 15)) {
+        return NextResponse.json({ error: "El numero de 'para' no es valido" }, { status: 400 });
+      }
+      return NextResponse.json(
+        await probarResumen(probar, { para: para || undefined, soloVista: url.searchParams.get("vista") === "1" })
+      );
     } catch (error: any) {
       console.error("[cron/lead-whatsapp] Fallo la prueba:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });

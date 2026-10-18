@@ -291,12 +291,7 @@ async function yaResuelto(clave: string, evento: Evento): Promise<boolean> {
   return filas.length > 0;
 }
 
-async function armarYEnviar(
-  evento: Evento, clave: string, titulo: string, desde: string, hasta: string
-) {
-  const cfg = leerConfig();
-  if (!cfg) return false;
-
+async function armarTexto(titulo: string, desde: string, hasta: string) {
   const crm = await datosCrm(desde, hasta);
   // Si Meta falla, el resumen sale igual con lo del CRM y avisa que faltan
   // esos datos; el motivo queda en el log.
@@ -304,8 +299,18 @@ async function armarYEnviar(
     console.error("[resumenes-whatsapp] No se pudieron leer los datos de Meta:", error);
     return { error: String(error?.message || error) };
   });
+  return textoResumen(titulo, crm, meta);
+}
 
-  return avisar(clave, evento, null, textoResumen(titulo, crm, meta), cfg);
+/** `destino` reemplaza al grupo: un numero (solo digitos) para las pruebas. */
+async function armarYEnviar(
+  evento: Evento, clave: string, titulo: string, desde: string, hasta: string, destino?: string
+) {
+  const cfg = leerConfig();
+  if (!cfg) return false;
+
+  const texto = await armarTexto(titulo, desde, hasta);
+  return avisar(clave, evento, null, texto, destino ? { ...cfg, grupo: destino } : cfg);
 }
 
 /**
@@ -344,11 +349,18 @@ export async function runResumenesWhatsapp() {
 }
 
 /**
- * Manda ahora un resumen marcado como prueba, con los mismos datos que tendra
+ * Arma ahora un resumen marcado como prueba, con los mismos datos que tendra
  * el real. Su clave lleva la hora, asi que no ocupa el lugar del resumen real
  * ni impide repetir la prueba.
+ *
+ *   - Sin opciones: lo publica en el grupo.
+ *   - `para`: lo manda a ese numero en vez del grupo.
+ *   - `soloVista`: no manda nada, devuelve el texto.
  */
-export async function probarResumen(tipo: "diario" | "semanal") {
+export async function probarResumen(
+  tipo: "diario" | "semanal",
+  opciones: { para?: string; soloVista?: boolean } = {}
+) {
   const ahora = ahoraEnChile();
   const ayer = sumarDias(ahora.fecha, -1);
 
@@ -362,6 +374,12 @@ export async function probarResumen(tipo: "diario" | "semanal") {
       ? ["RESUMEN_DIARIO", `🧪 *PRUEBA* · 📊 *Resumen de ayer* · ${fechaCorta(ayer)}`, ayer, ayer]
       : ["RESUMEN_SEMANAL", `🧪 *PRUEBA* · 📊 *Resumen de la semana* · ${fechaCorta(lunes)} al ${fechaCorta(domingo)}`, lunes, domingo];
 
+  if (opciones.soloVista) return { texto: await armarTexto(titulo, desde, hasta) };
+
   const clave = `PRUEBA:${evento}:${Date.now()}`;
-  return { clave, enviado: await armarYEnviar(evento, clave, titulo, desde, hasta) };
+  return {
+    clave,
+    para: opciones.para || "grupo",
+    enviado: await armarYEnviar(evento, clave, titulo, desde, hasta, opciones.para),
+  };
 }
