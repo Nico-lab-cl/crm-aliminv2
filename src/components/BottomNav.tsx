@@ -1,6 +1,6 @@
 "use client";
 
-import { Users, UserCircle, LayoutGrid, Plus, PenTool, MessageSquare } from "lucide-react";
+import { Users, Activity, LayoutGrid, Plus, PenTool, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import clsx from "clsx";
@@ -48,9 +48,9 @@ export default function BottomNav() {
   const isVisitsActive = currentMenu === "visits";
   const isSigningsActive = currentMenu === "signings";
   const isInboxActive = pathname === "/inbox";
-  const isProfileActive = currentMenu === "profile";
+  const isActividadActive = pathname === "/actividad";
 
-  const handleNav = (target: "leads" | "visits" | "signings" | "profile" | "inbox") => {
+  const handleNav = (target: "leads" | "visits" | "signings" | "actividad" | "inbox") => {
     if (target === "leads") {
       router.push("/dashboard");
     } else if (target === "visits") {
@@ -61,7 +61,8 @@ export default function BottomNav() {
     } else if (target === "inbox") {
       router.push("/inbox");
     } else {
-      router.push("/dashboard?menu=profile");
+      // Perfil se abre desde el ícono de arriba en Mis Leads.
+      router.push("/actividad");
     }
   };
 
@@ -138,14 +139,14 @@ export default function BottomNav() {
             </button>
 
             <button
-              onClick={() => handleNav("profile")}
+              onClick={() => handleNav("actividad")}
               className={clsx(
                 "flex flex-col items-center gap-1 transition-all rounded-xl p-1",
-                isProfileActive ? "text-[#D4AF37] scale-110" : "text-slate-400 opacity-60"
+                isActividadActive ? "text-[#D4AF37] scale-110" : "text-slate-400 opacity-60"
               )}
             >
-              <UserCircle size={24} strokeWidth={isProfileActive ? 2.5 : 2} />
-              <span className="text-[10px] font-bold tracking-wider">PERFIL</span>
+              <Activity size={24} strokeWidth={isActividadActive ? 2.5 : 2} />
+              <span className="text-[10px] font-bold tracking-wider">ACTIVIDAD</span>
             </button>
           </div>
         </div>

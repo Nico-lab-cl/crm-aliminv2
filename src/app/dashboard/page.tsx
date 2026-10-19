@@ -8,7 +8,7 @@ import {
   ChevronRight, Phone, MessageSquare, Clock,
   MoreVertical, Share2, Mail, ChevronLeft, ChevronDown,
   LayoutGrid, Globe, Megaphone, Calendar, MapPin,
-  Meh, Smile, Laugh, UserMinus, PenTool, TrendingUp, X
+  Meh, Smile, Laugh, UserMinus, PenTool, TrendingUp, X, UserCircle
 } from "lucide-react";
 import clsx from "clsx";
 import Image from "next/image";
@@ -408,6 +408,14 @@ function DashboardContent() {
             <div className="shrink-0">
               <NotificationBell />
             </div>
+            {/* Perfil: salió de la barra de abajo para dejarle el lugar a Actividad. */}
+            <button
+              onClick={() => setIsProfileOpen(true)}
+              aria-label="Abrir mi perfil"
+              className="shrink-0 w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 active:scale-95 transition-all"
+            >
+              <UserCircle size={20} />
+            </button>
           </div>
         </div>
 
