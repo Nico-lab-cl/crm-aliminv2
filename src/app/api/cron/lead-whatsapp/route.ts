@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { runAvisosWhatsappLeads } from "@/lib/avisosWhatsappLeads";
 import { probarResumen, runResumenesWhatsapp } from "@/lib/resumenesWhatsapp";
 import { probarResumenScore } from "@/lib/avisosLeadScore";
+import { probarPresupuesto } from "@/lib/presupuestoMeta";
 
 export const dynamic = "force-dynamic";
 
@@ -23,12 +24,16 @@ export const dynamic = "force-dynamic";
  * existe, el token de Evolution (EVOLUTION_API_KEY). Con &para=569XXXXXXXX
  * va a ese numero en vez del grupo; con &vista=1 no manda nada y devuelve el
  * texto.
+ *
+ * ?probar=presupuesto arma el analisis semanal del presupuesto de Meta con la
+ * ultima semana terminada. Nunca va al grupo: con &vista=1 solo devuelve el
+ * texto; si no, va a &para= o a PRESUPUESTO_META_PARA.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const probar = url.searchParams.get("probar");
 
-  if (probar === "diario" || probar === "semanal" || probar === "score" || probar === "score-vista") {
+  if (probar === "diario" || probar === "semanal" || probar === "score" || probar === "score-vista" || probar === "presupuesto") {
     const esperada = process.env.CRON_SECRET || process.env.EVOLUTION_API_KEY;
     const recibida =
       req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || url.searchParams.get("secret");
@@ -44,8 +49,12 @@ export async function GET(req: Request) {
       if (para && (para.length < 8 || para.length > 15)) {
         return NextResponse.json({ error: "El numero de 'para' no es valido" }, { status: 400 });
       }
+      const soloVista = url.searchParams.get("vista") === "1";
+      if (probar === "presupuesto") {
+        return NextResponse.json(await probarPresupuesto({ para: para || undefined, soloVista }));
+      }
       return NextResponse.json(
-        await probarResumen(probar, { para: para || undefined, soloVista: url.searchParams.get("vista") === "1" })
+        await probarResumen(probar, { para: para || undefined, soloVista })
       );
     } catch (error: any) {
       console.error("[cron/lead-whatsapp] Fallo la prueba:", error);

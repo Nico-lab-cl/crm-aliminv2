@@ -39,9 +39,9 @@ const HORA_DIARIO = 11;
 /** Lunes a mediodia, una hora despues del diario del domingo. */
 const HORA_SEMANAL = 12;
 
-const META_API = "https://graph.facebook.com/v21.0";
+export const META_API = "https://graph.facebook.com/v21.0";
 /** Cuenta publicitaria "Alimin Meta". */
-const CUENTA_META_POR_DEFECTO = "343467944575694";
+export const CUENTA_META_POR_DEFECTO = "343467944575694";
 
 const NOMBRE_ASESOR: Record<string, string> = {
   [MARCELA_ID]: "Marcela",
@@ -54,7 +54,7 @@ const NOMBRE_ASESOR: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 /** Fecha (YYYY-MM-DD), hora y dia de la semana (1 = lunes) en Chile. */
-function ahoraEnChile(fecha = new Date()) {
+export function ahoraEnChile(fecha = new Date()) {
   const partes = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Santiago",
     year: "numeric", month: "2-digit", day: "2-digit",
@@ -69,13 +69,13 @@ function ahoraEnChile(fecha = new Date()) {
   };
 }
 
-function sumarDias(fecha: string, dias: number) {
+export function sumarDias(fecha: string, dias: number) {
   const [a, m, d] = fecha.split("-").map(Number);
   return new Date(Date.UTC(a, m - 1, d + dias)).toISOString().slice(0, 10);
 }
 
 /** El instante (UTC) en que empieza ese dia en Chile. */
-function inicioDelDiaEnChile(fecha: string): Date {
+export function inicioDelDiaEnChile(fecha: string): Date {
   const [a, m, d] = fecha.split("-").map(Number);
   const comoSiFueraUtc = Date.UTC(a, m - 1, d);
   const partes = new Intl.DateTimeFormat("en-US", {
@@ -89,7 +89,7 @@ function inicioDelDiaEnChile(fecha: string): Date {
   return new Date(comoSiFueraUtc - (vistoEnChile - comoSiFueraUtc));
 }
 
-function fechaCorta(fecha: string) {
+export function fechaCorta(fecha: string) {
   const [a, m, d] = fecha.split("-");
   return `${d}-${m}-${a}`;
 }
@@ -104,7 +104,7 @@ type DatosMeta = {
   whatsapp: { asesor: string; conversaciones: number }[];
 };
 
-async function leerTodo(url: string): Promise<any[]> {
+export async function leerTodo(url: string): Promise<any[]> {
   const filas: any[] = [];
   let siguiente: string | null = url;
   // Tope de paginas por las dudas: la cuenta tiene pocas decenas de conjuntos.

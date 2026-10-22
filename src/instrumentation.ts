@@ -75,6 +75,7 @@ export async function register() {
     const { runAvisosWhatsappLeads } = await import("./lib/avisosWhatsappLeads");
     const { runResumenesWhatsapp } = await import("./lib/resumenesWhatsapp");
     const { runAvisosLeadScore } = await import("./lib/avisosLeadScore");
+    const { runPresupuestoMeta } = await import("./lib/presupuestoMeta");
 
     let avisoEnCurso = false;
     const pasadaWhatsapp = async () => {
@@ -109,6 +110,14 @@ export async function register() {
         }
       } catch (error) {
         console.error("[cron] Fallo la pasada de avisos de lead score:", error);
+      }
+      // Analisis semanal del presupuesto de Meta, lunes 10:00, solo al numero
+      // de PRESUPUESTO_META_PARA. Apagado sin ese numero o sin META_ADS_TOKEN.
+      try {
+        const presupuesto = await runPresupuestoMeta();
+        if (presupuesto.enviado) console.log("[cron] Analisis de presupuesto de Meta enviado.");
+      } catch (error) {
+        console.error("[cron] Fallo el analisis de presupuesto de Meta:", error);
       } finally {
         avisoEnCurso = false;
       }

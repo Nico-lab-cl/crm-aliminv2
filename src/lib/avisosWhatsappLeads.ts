@@ -295,7 +295,8 @@ export function textoLeadSinAtender(lead: LeadAviso): string {
  * por ejemplo "RESUMEN_DIARIO:2026-10-04", y la clave unica impide mandarlos
  * dos veces igual que con los avisos de un lead.
  */
-export type Evento = "LEAD_NUEVO" | "LEAD_REINGRESO" | "LEAD_SIN_ATENDER" | "RESUMEN_DIARIO" | "RESUMEN_SEMANAL";
+export type Evento =
+  | "LEAD_NUEVO" | "LEAD_REINGRESO" | "LEAD_SIN_ATENDER" | "RESUMEN_DIARIO" | "RESUMEN_SEMANAL" | "PRESUPUESTO_META";
 
 /**
  * Reclama un aviso antes de mandarlo. Devuelve el id del registro si esta
