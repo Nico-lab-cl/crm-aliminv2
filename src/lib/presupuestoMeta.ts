@@ -235,6 +235,13 @@ async function calidadPorCampana(desde: string, hasta: string, meta: DatosMeta) 
     porNombre.set(normalizar(f.campana), f.campanaId);
   }
 
+  // Los leads de formulario de Meta suelen llegar sin adId (o con uno que no
+  // calza). Si en el periodo hubo una sola campaña de formulario, son de ella.
+  const deFormulario = Array.from(new Set(
+    meta.semana.filter((f) => f.tipo === "FORMULARIO" && f.gasto > 0).map((f) => f.campanaId)
+  ));
+  const campanaFormulario = deFormulario.length === 1 ? deFormulario[0] : null;
+
   const campanaDe = (l: any): string | null => {
     if (l.adId && porId.has(l.adId)) return porId.get(l.adId)!;
     for (const valor of [l.utmCampaign, l.utmContent, l.utmTerm]) {
@@ -243,7 +250,8 @@ async function calidadPorCampana(desde: string, hasta: string, meta: DatosMeta) 
       const n = normalizar(valor);
       if (n && porNombre.has(n)) return porNombre.get(n)!;
     }
-    return null;
+    const esFormulario = minus(l.source) === "meta" || l.formId || l.adId;
+    return esFormulario ? campanaFormulario : null;
   };
 
   // Calientes: tabla del lead score (la mantiene el CRM web). Si no existe, 0.
