@@ -111,8 +111,8 @@ export async function register() {
       } catch (error) {
         console.error("[cron] Fallo la pasada de avisos de lead score:", error);
       }
-      // Analisis semanal del presupuesto de Meta, lunes 10:00, solo al numero
-      // de PRESUPUESTO_META_PARA. Apagado sin ese numero o sin META_ADS_TOKEN.
+      // Analisis semanal del presupuesto de Meta, lunes 10:00, al grupo
+      // "MKT | Alimin" (ver presupuestoMeta.ts). Apagado sin META_ADS_TOKEN.
       try {
         const presupuesto = await runPresupuestoMeta();
         if (presupuesto.enviado) console.log("[cron] Analisis de presupuesto de Meta enviado.");

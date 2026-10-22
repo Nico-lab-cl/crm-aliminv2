@@ -11,12 +11,13 @@ import {
 } from "./resumenesWhatsapp";
 
 /**
- * Analisis semanal del presupuesto de Meta, por WhatsApp a un solo numero
- * (PRESUPUESTO_META_PARA). Nunca va al grupo: el grupo es del equipo de
- * ventas y no lleva plata.
+ * Analisis semanal del presupuesto de Meta, por WhatsApp al grupo de
+ * marketing "MKT | Alimin" (o a PRESUPUESTO_META_PARA). Nunca al grupo de
+ * leads: ese es del equipo de ventas y no lleva plata.
  *
  * Sale el lunes desde las 10:00 de Chile, con la semana lunes-domingo
- * anterior comparada con la semana previa. Lleva:
+ * anterior comparada con la semana previa, y en los dias de ESPECIALES con
+ * otro periodo (comparado con el periodo previo del mismo largo). Lleva:
  *   - Gasto, contactos y costo por contacto de la cuenta, y el ritmo de gasto
  *     (presupuestos diarios activos proyectados al mes).
  *   - Por campaña: gasto, resultados segun Meta y costo por resultado, y la
@@ -27,7 +28,7 @@ import {
  * Los WhatsApp de anuncios no llegan al CRM (caen en el telefono del asesor),
  * asi que esa campaña no tiene linea de CRM.
  *
- * Usa el token de anuncios (META_ADS_TOKEN). Sin token o sin numero, no corre.
+ * Usa el token de anuncios (META_ADS_TOKEN). Sin token, no corre.
  */
 
 const HORA_ENVIO = 10;
@@ -123,9 +124,18 @@ async function insightsPorAnuncio(
   });
 }
 
+/** Dias del periodo, ambos incluidos. */
+function diasDelPeriodo(desde: string, hasta: string): number {
+  const [a1, m1, d1] = desde.split("-").map(Number);
+  const [a2, m2, d2] = hasta.split("-").map(Number);
+  return Math.round((Date.UTC(a2, m2 - 1, d2) - Date.UTC(a1, m1 - 1, d1)) / DIA) + 1;
+}
+
 type DatosMeta = {
   semana: FilaAnuncio[];
   anterior: FilaAnuncio[];
+  desdeAnterior: string;
+  hastaAnterior: string;
   alcance: Map<string, number>;
   presupuestoDiario: number;
   creadoEl: Map<string, Date>;
@@ -153,13 +163,16 @@ async function leerMeta(desde: string, hasta: string): Promise<DatosMeta> {
     conjuntos.filter((c) => c.effective_status === "ACTIVE").reduce((s, c) => s + (Number(c.daily_budget) || 0), 0) +
     campanas.reduce((s, c) => s + (Number(c.daily_budget) || 0), 0);
 
-  const lunesAnterior = sumarDias(desde, -7);
-  const domingoAnterior = sumarDias(desde, -1);
+  // Se compara con el periodo anterior del mismo largo (la semana previa, o
+  // los 10 dias previos si el periodo es de 10 dias).
+  const dias = diasDelPeriodo(desde, hasta);
+  const desdeAnterior = sumarDias(desde, -dias);
+  const hastaAnterior = sumarDias(desde, -1);
   const rango = encodeURIComponent(JSON.stringify({ since: desde, until: hasta }));
 
   const [semana, anterior, porCampana] = await Promise.all([
     insightsPorAnuncio(cuenta, t, desde, hasta, objetivoDe),
-    insightsPorAnuncio(cuenta, t, lunesAnterior, domingoAnterior, objetivoDe),
+    insightsPorAnuncio(cuenta, t, desdeAnterior, hastaAnterior, objetivoDe),
     // El alcance no se puede sumar por anuncio (la misma persona cuenta varias veces).
     leerTodo(`${META_API}/act_${cuenta}/insights?level=campaign&time_range=${rango}&fields=campaign_id,reach&limit=100&access_token=${t}`),
   ]);
@@ -167,6 +180,8 @@ async function leerMeta(desde: string, hasta: string): Promise<DatosMeta> {
   return {
     semana,
     anterior,
+    desdeAnterior,
+    hastaAnterior,
     alcance: new Map(porCampana.map((f) => [f.campaign_id, Number(f.reach) || 0])),
     presupuestoDiario,
     creadoEl: new Map(anuncios.map((a) => [a.id, new Date(a.created_time)])),
@@ -313,14 +328,16 @@ type Accion = { prioridad: number; peso: number; texto: string };
  * resultados:
  *   - Pausar: cuesta mas de 2,5 veces su campaña, o gasto 3 resultados de su
  *     campaña sin traer ninguno.
- *   - Renovar (cansado): costo +25% y clics -10% respecto de la semana
- *     anterior, o frecuencia semanal sobre 3 (5 en remarketing).
+ *   - Renovar (cansado): costo +25% y clics -10% respecto del periodo
+ *     anterior, o frecuencia sobre 3 por semana (5 en remarketing),
+ *     proporcional al largo del periodo.
  *   - Darle mas: cuesta menos del 75% de su campaña, con 5 resultados o mas.
  */
-function acciones(meta: DatosMeta, campanas: Map<string, Campana>, hasta: string): string[] {
+function acciones(meta: DatosMeta, campanas: Map<string, Campana>, desde: string, hasta: string): string[] {
   const antes = new Map(meta.anterior.map((f) => [f.anuncioId, f]));
   const lista: Accion[] = [];
   const fin = inicioDelDiaEnChile(sumarDias(hasta, 1)).getTime();
+  const semanas = Math.max(1, diasDelPeriodo(desde, hasta) / 7);
 
   for (const f of meta.semana) {
     if (!esContacto(f.tipo) || f.gasto < 5000) continue;
@@ -337,7 +354,7 @@ function acciones(meta: DatosMeta, campanas: Map<string, Campana>, hasta: string
 
     const previo = antes.get(f.anuncioId);
     const ctr = f.impresiones ? f.clics / f.impresiones : 0;
-    const limiteFrecuencia = esRemarketing(f.campana) ? 5 : 3;
+    const limiteFrecuencia = (esRemarketing(f.campana) ? 5 : 3) * semanas;
     if (costo && previo && previo.resultados >= 3 && previo.gasto >= 5000 && previo.impresiones) {
       const costoPrevio = previo.gasto / previo.resultados;
       const ctrPrevio = previo.clics / previo.impresiones;
@@ -375,14 +392,17 @@ function acciones(meta: DatosMeta, campanas: Map<string, Campana>, hasta: string
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-CL")}`;
 const miles = (n: number) =>
   n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1).replace(".", ",")} M` : `$${Math.round(n / 1000)} mil`;
+const diaMes = (fecha: string) => fechaCorta(fecha).slice(0, 5);
 
-function variacion(ahora: number | null, antes: number | null): { texto: string; color: string } {
-  if (!ahora) return { texto: "", color: "" };
-  if (!antes) return { texto: " nueva", color: " 🟡" };
+/** Variacion del costo, su color y que se sugiere hacer con la campaña. */
+function variacion(ahora: number | null, antes: number | null): { texto: string; color: string; sugerencia: string } {
+  if (!ahora) return { texto: "", color: "", sugerencia: "" };
+  if (!antes) return { texto: " nueva", color: " 🟡", sugerencia: " (en aprendizaje: esperar)" };
   const p = Math.round((ahora / antes - 1) * 100);
   const texto = p === 0 ? " igual" : ` ${p > 0 ? "↑" : "↓"}${Math.abs(p)}%`;
-  const color = p >= 25 ? " 🔴" : p >= 10 ? " 🟡" : " 🟢";
-  return { texto, color };
+  if (p >= 25) return { texto, color: " 🔴", sugerencia: " (sube el costo: renovar anuncios)" };
+  if (p >= 10) return { texto, color: " 🟡", sugerencia: " (sube un poco: vigilar)" };
+  return { texto, color: " 🟢", sugerencia: p < 0 ? " (más barata: mantener)" : " (estable: mantener)" };
 }
 
 export async function textoPresupuesto(desde: string, hasta: string, titulo: string): Promise<string> {
@@ -404,7 +424,7 @@ export async function textoPresupuesto(desde: string, hasta: string, titulo: str
   const vGasto = gastoPrev ? Math.round((gasto / gastoPrev - 1) * 100) : null;
   const vCosto = variacion(costo, costoPrev);
 
-  const l: string[] = [titulo];
+  const l: string[] = [titulo, `_Comparado con el ${diaMes(meta.desdeAnterior)} al ${diaMes(meta.hastaAnterior)}_`, ""];
   l.push(
     `Gasto ${pesos(gasto)}${vGasto === null ? "" : ` (${vGasto >= 0 ? "+" : ""}${vGasto}%)`} · ${contactos} contactos · *${costo ? pesos(costo) : "—"} por contacto*${vCosto.texto}`
   );
@@ -421,7 +441,9 @@ export async function textoPresupuesto(desde: string, hasta: string, titulo: str
       continue;
     }
     const v = variacion(c.costo, c.costoAntes);
-    const resultado = esContacto(c.tipo) ? ` · ${c.resultados} ${e.unidad} · *${c.costo ? pesos(c.costo) : "—"}*${v.texto}${v.color}` : "";
+    const resultado = esContacto(c.tipo)
+      ? ` · ${c.resultados} ${e.unidad} · *${c.costo ? pesos(c.costo) : "—"}*${v.texto}${v.color}${v.sugerencia}`
+      : "";
     l.push(`${e.emoji} ${nombreCampana(c.nombre)} · ${miles(c.gasto)}${resultado}`);
 
     const q = calidad.get(c.id);
@@ -449,9 +471,9 @@ export async function textoPresupuesto(desde: string, hasta: string, titulo: str
     l.push("", linea);
   }
 
-  const pendientes = acciones(meta, campanas, hasta);
+  const pendientes = acciones(meta, campanas, desde, hasta);
   if (pendientes.length) {
-    l.push("", "✅ *Esta semana*");
+    l.push("", "✅ *Qué hacer ahora*");
     pendientes.forEach((a, i) => l.push(`${i + 1}. ${a}`));
   }
 
@@ -462,6 +484,16 @@ export async function textoPresupuesto(desde: string, hasta: string, titulo: str
 // Envio
 // ---------------------------------------------------------------------------
 
+/** Grupo "MKT | Alimin". PRESUPUESTO_META_PARA lo reemplaza (otro grupo o un numero). */
+const DESTINO_POR_DEFECTO = "120363386493353789@g.us";
+
+/**
+ * Envios unicos fuera del lunes. El del 22-10-2026 fue el primero: 12 al 21
+ * de octubre, a las 10:00. Solo sale ese mismo dia, para que un despliegue
+ * tardio no lo mande despues.
+ */
+const ESPECIALES = [{ dia: "2026-10-22", desde: "2026-10-12", hasta: "2026-10-21" }];
+
 function semanaAnterior() {
   const ahora = ahoraEnChile();
   const diasDesdeLunes = (ahora.diaSemana + 6) % 7;
@@ -469,59 +501,86 @@ function semanaAnterior() {
   return { ahora, lunes, domingo: sumarDias(lunes, 6) };
 }
 
-const tituloDe = (lunes: string, domingo: string) =>
-  `💰 *Meta · semana ${fechaCorta(lunes).slice(0, 5)} al ${fechaCorta(domingo).slice(0, 5)}*`;
+const tituloSemana = (lunes: string, domingo: string) => `💰 *Meta · semana ${diaMes(lunes)} al ${diaMes(domingo)}*`;
+const tituloPeriodo = (desde: string, hasta: string) => `💰 *Meta · ${diaMes(desde)} al ${diaMes(hasta)}*`;
 
-/** El numero al que va. Solo digitos; sin numero o sin token, apagado. */
-function destino(): string | null {
-  const para = (process.env.PRESUPUESTO_META_PARA || "").replace(/\D/g, "");
-  return para.length >= 8 && process.env.META_ADS_TOKEN ? para : null;
+/** Grupo (JID @g.us) o numero (solo digitos). Sin token de Meta, apagado. */
+function destino(valor = process.env.PRESUPUESTO_META_PARA || DESTINO_POR_DEFECTO): string | null {
+  if (!process.env.META_ADS_TOKEN) return null;
+  const v = valor.trim();
+  if (/@g\.us$/.test(v)) return v;
+  const digitos = v.replace(/\D/g, "");
+  return digitos.length >= 8 ? digitos : null;
 }
 
 let ultimoFallo = 0;
 
-/** Pensada para llamarse cada minuto: solo arma el mensaje el lunes desde las 10:00, una vez. */
+async function yaEnviado(clave: string): Promise<boolean> {
+  const filas: unknown[] = await prisma.$queryRaw`
+    SELECT 1 FROM public.whatsapp_lead_avisos
+     WHERE lead_id = ${clave} AND evento = 'PRESUPUESTO_META'
+       AND (estado <> 'ERROR' OR intentos >= 3)`;
+  return filas.length > 0;
+}
+
+/**
+ * Pensada para llamarse cada minuto. Arma el mensaje el lunes desde las
+ * 10:00 (semana lunes-domingo anterior) y en los dias de ESPECIALES, una vez.
+ */
 export async function runPresupuestoMeta() {
   const cfg = leerConfig();
   const para = destino();
   if (!cfg || !para) return { activo: false, enviado: false };
 
   const { ahora, lunes, domingo } = semanaAnterior();
-  if (ahora.diaSemana !== 1 || ahora.hora < HORA_ENVIO) return { activo: true, enviado: false };
+  if (ahora.hora < HORA_ENVIO) return { activo: true, enviado: false };
+
+  const especial = ESPECIALES.find((e) => e.dia === ahora.fecha);
+  const envio = especial
+    ? {
+        clave: `PRESUPUESTO_META:ESPECIAL:${especial.desde}`,
+        desde: especial.desde,
+        hasta: especial.hasta,
+        titulo: tituloPeriodo(especial.desde, especial.hasta),
+      }
+    : ahora.diaSemana === 1
+      ? { clave: `PRESUPUESTO_META:${lunes}`, desde: lunes, hasta: domingo, titulo: tituloSemana(lunes, domingo) }
+      : null;
+  if (!envio) return { activo: true, enviado: false };
 
   // Si Meta fallo, no reintentar cada minuto: esperar media hora.
   if (Date.now() - ultimoFallo < 30 * 60 * 1000) return { activo: true, enviado: false };
-
-  const clave = `PRESUPUESTO_META:${lunes}`;
-  const ya: unknown[] = await prisma.$queryRaw`
-    SELECT 1 FROM public.whatsapp_lead_avisos
-     WHERE lead_id = ${clave} AND evento = 'PRESUPUESTO_META'
-       AND (estado <> 'ERROR' OR intentos >= 3)`;
-  if (ya.length) return { activo: true, enviado: false };
+  if (await yaEnviado(envio.clave)) return { activo: true, enviado: false };
 
   let texto: string;
   try {
-    texto = await textoPresupuesto(lunes, domingo, tituloDe(lunes, domingo));
+    texto = await textoPresupuesto(envio.desde, envio.hasta, envio.titulo);
   } catch (error) {
     ultimoFallo = Date.now();
     throw error;
   }
-  return { activo: true, enviado: await avisar(clave, "PRESUPUESTO_META", null, texto, { ...cfg, grupo: para }) };
+  return { activo: true, enviado: await avisar(envio.clave, "PRESUPUESTO_META", null, texto, { ...cfg, grupo: para }) };
 }
 
 /**
- * Prueba con la ultima semana lunes-domingo terminada. `soloVista` devuelve
- * el texto sin mandar nada; si no, va a `para` o a PRESUPUESTO_META_PARA.
- * Nunca al grupo.
+ * Prueba. Por defecto la ultima semana lunes-domingo terminada; `desde` y
+ * `hasta` (YYYY-MM-DD) eligen otro periodo. `soloVista` devuelve el texto sin
+ * mandar nada; si no, va a `para` (numero o grupo) o al destino configurado.
  */
-export async function probarPresupuesto(opciones: { para?: string; soloVista?: boolean } = {}) {
+export async function probarPresupuesto(
+  opciones: { para?: string; soloVista?: boolean; desde?: string; hasta?: string } = {}
+) {
   const { lunes, domingo } = semanaAnterior();
-  const texto = await textoPresupuesto(lunes, domingo, `🧪 *PRUEBA* · ${tituloDe(lunes, domingo)}`);
+  const fecha = /^\d{4}-\d{2}-\d{2}$/;
+  const desde = opciones.desde && fecha.test(opciones.desde) ? opciones.desde : lunes;
+  const hasta = opciones.hasta && fecha.test(opciones.hasta) ? opciones.hasta : domingo;
+  const titulo = desde === lunes && hasta === domingo ? tituloSemana(desde, hasta) : tituloPeriodo(desde, hasta);
+  const texto = await textoPresupuesto(desde, hasta, `🧪 *PRUEBA* · ${titulo}`);
   if (opciones.soloVista) return { texto };
 
   const cfg = leerConfig();
-  const para = opciones.para || destino();
-  if (!cfg || !para) return { texto, enviado: false, motivo: "Falta la configuracion de Evolution o el numero" };
+  const para = opciones.para ? destino(opciones.para) : destino();
+  if (!cfg || !para) return { texto, enviado: false, motivo: "Falta la configuracion de Evolution, el destino o el token" };
   const clave = `PRUEBA:PRESUPUESTO_META:${Date.now()}`;
   return { texto, para, enviado: await avisar(clave, "PRESUPUESTO_META", null, texto, { ...cfg, grupo: para }) };
 }

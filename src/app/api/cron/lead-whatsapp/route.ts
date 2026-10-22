@@ -25,9 +25,9 @@ export const dynamic = "force-dynamic";
  * va a ese numero en vez del grupo; con &vista=1 no manda nada y devuelve el
  * texto.
  *
- * ?probar=presupuesto arma el analisis semanal del presupuesto de Meta con la
- * ultima semana terminada. Nunca va al grupo: con &vista=1 solo devuelve el
- * texto; si no, va a &para= o a PRESUPUESTO_META_PARA.
+ * ?probar=presupuesto arma el analisis del presupuesto de Meta con la ultima
+ * semana terminada, o con &desde=AAAA-MM-DD&hasta=AAAA-MM-DD. Con &vista=1 solo
+ * devuelve el texto; si no, va a &para= (numero o grupo) o al grupo MKT.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -45,13 +45,21 @@ export async function GET(req: Request) {
       // score lo publica en el grupo marcado como PRUEBA.
       if (probar === "score-vista") return NextResponse.json(await probarResumenScore("vista"));
       if (probar === "score") return NextResponse.json(await probarResumenScore("enviar"));
+      const soloVista = url.searchParams.get("vista") === "1";
+      if (probar === "presupuesto") {
+        // para acepta un numero o un grupo (@g.us); lo valida probarPresupuesto.
+        return NextResponse.json(
+          await probarPresupuesto({
+            para: url.searchParams.get("para") || undefined,
+            soloVista,
+            desde: url.searchParams.get("desde") || undefined,
+            hasta: url.searchParams.get("hasta") || undefined,
+          })
+        );
+      }
       const para = (url.searchParams.get("para") || "").replace(/\D/g, "");
       if (para && (para.length < 8 || para.length > 15)) {
         return NextResponse.json({ error: "El numero de 'para' no es valido" }, { status: 400 });
-      }
-      const soloVista = url.searchParams.get("vista") === "1";
-      if (probar === "presupuesto") {
-        return NextResponse.json(await probarPresupuesto({ para: para || undefined, soloVista }));
       }
       return NextResponse.json(
         await probarResumen(probar, { para: para || undefined, soloVista })
