@@ -8,6 +8,8 @@ import { MARCELA_ID, ORLANDO_ID, BARBARA_ID } from "./assignment";
  *   - LEAD_NUEVO: en cuanto el lead tiene asesor.
  *   - LEAD_SIN_ATENDER: 30 minutos despues del aviso nuevo, si el asesor
  *     todavia no lo marco como contactado.
+ *   - LEAD_REINGRESO: cada vez que un lead ya anunciado vuelve a llenar un
+ *     formulario. Su lead_id es "<id del lead>:<hora de la nueva llegada>".
  *
  * Lo que se publica y lo que no:
  *   - En el grupo estan todos los asesores, asi que NUNCA va el telefono ni el
@@ -256,6 +258,26 @@ export function textoLeadNuevo(lead: LeadAviso, tipo: TipoLead): string {
   return lineas.join("\n");
 }
 
+export function textoLeadReingreso(lead: LeadAviso): string {
+  const lineas = [
+    "🔁 *Volvió a escribir*",
+    "",
+    `👤 *${nombreDelLead(lead)}*`,
+    `📍 *Llegó primero por:* ${deDondeViene(lead)}`,
+  ];
+
+  const nota = notaCorta(lead.notes);
+  if (nota) lineas.push(`📝 *Nota:* ${nota}`);
+
+  lineas.push(
+    "",
+    `👨‍💼 *Sigue con:* ${nombreDelAsesor(lead)} (quedó otra vez sin contactar)`,
+    `🕐 ${horaChile(lead.createdAt)}`
+  );
+
+  return lineas.join("\n");
+}
+
 export function textoLeadSinAtender(lead: LeadAviso): string {
   return [
     "⏰ *Lead sin atender (30 min)*",
@@ -273,7 +295,7 @@ export function textoLeadSinAtender(lead: LeadAviso): string {
  * por ejemplo "RESUMEN_DIARIO:2026-10-04", y la clave unica impide mandarlos
  * dos veces igual que con los avisos de un lead.
  */
-export type Evento = "LEAD_NUEVO" | "LEAD_SIN_ATENDER" | "RESUMEN_DIARIO" | "RESUMEN_SEMANAL";
+export type Evento = "LEAD_NUEVO" | "LEAD_REINGRESO" | "LEAD_SIN_ATENDER" | "RESUMEN_DIARIO" | "RESUMEN_SEMANAL";
 
 /**
  * Reclama un aviso antes de mandarlo. Devuelve el id del registro si esta
@@ -390,9 +412,9 @@ export async function runAvisosWhatsappLeads() {
   // Lead.createdAt es un timestamp sin zona, y comparado contra un parametro
   // crudo el resultado depende de la zona horaria de la sesion de la base. Con
   // el ORM, Prisma hace la conversion igual que en el resto del CRM.
-  const recientes: { id: string }[] = await (prisma as any).lead.findMany({
+  const recientes: { id: string; createdAt: Date }[] = await (prisma as any).lead.findMany({
     where: { createdAt: { gte: desde }, assignedToId: { in: ASESORES_ANUNCIABLES } },
-    select: { id: true },
+    select: { id: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
 
@@ -426,6 +448,59 @@ export async function runAvisosWhatsappLeads() {
     if (presupuesto < MAX_POR_CORRIDA) await pausa(PAUSA_ENTRE_ENVIOS_MS);
     presupuesto--;
     if (await avisar(lead.id, "LEAD_NUEVO", tipo, textoLeadNuevo(lead, tipo), cfg)) enviados++;
+  }
+
+  // 1b) Reingresos: leads ya anunciados que despues volvieron a llenar un
+  //     formulario. El reingreso le pone a createdAt la hora de la nueva
+  //     llegada, asi que se reconocen por tener un createdAt posterior a su
+  //     aviso de nuevo. La clave lleva esa hora: cada vuelta del cliente se
+  //     anuncia una vez, y una tercera vuelta vuelve a anunciarse.
+  //
+  //     Va aparte del paso 1 para que una falla aqui no deje de anunciar los
+  //     leads nuevos, que son lo principal.
+  try {
+    const anunciados = recientes.filter((l) => resueltos.has(l.id));
+    const enviosNuevo: { lead_id: string; enviado_en: Date }[] = anunciados.length
+      ? await prisma.$queryRaw`
+          SELECT lead_id, enviado_en FROM public.whatsapp_lead_avisos
+           WHERE evento = 'LEAD_NUEVO' AND estado = 'ENVIADO' AND enviado_en IS NOT NULL
+             AND lead_id = ANY(${anunciados.map((l) => l.id)})`
+      : [];
+    const llegada = new Map(anunciados.map((l) => [l.id, l.createdAt]));
+
+    // Margen de un minuto: el aviso de nuevo sale siempre despues de la
+    // llegada, pero el reloj del CRM y el de la base no son el mismo.
+    const reingresos = enviosNuevo
+      .filter(({ lead_id, enviado_en }) => {
+        const creado = llegada.get(lead_id);
+        return creado && creado.getTime() > new Date(enviado_en).getTime() + 60_000;
+      })
+      .map(({ lead_id }) => ({ id: lead_id, clave: `${lead_id}:${llegada.get(lead_id)!.toISOString()}` }));
+
+    const reingresosResueltos: { lead_id: string }[] = reingresos.length
+      ? await prisma.$queryRaw`
+          SELECT lead_id FROM public.whatsapp_lead_avisos
+           WHERE evento = 'LEAD_REINGRESO'
+             AND lead_id = ANY(${reingresos.map((r) => r.clave)})
+             AND (estado <> 'ERROR' OR intentos >= ${MAX_INTENTOS})`
+      : [];
+    const yaAnunciados = new Set(reingresosResueltos.map((r) => r.lead_id));
+
+    for (const { id, clave } of reingresos.filter((r) => !yaAnunciados.has(r.clave))) {
+      if (presupuesto <= 0) break;
+      const lead: LeadAviso | null = await (prisma as any).lead.findUnique({ where: { id }, select: SELECT_LEAD });
+      if (!lead) continue;
+
+      // El cliente escribio otra vez aunque su origen sea una importacion: un
+      // reingreso siempre es una llegada real.
+      const tipo = tipoDeLead(lead) ?? "WEB";
+
+      if (presupuesto < MAX_POR_CORRIDA) await pausa(PAUSA_ENTRE_ENVIOS_MS);
+      presupuesto--;
+      if (await avisar(clave, "LEAD_REINGRESO", tipo, textoLeadReingreso(lead), cfg)) enviados++;
+    }
+  } catch (error) {
+    console.error("[avisos-whatsapp] Fallo la pasada de reingresos:", error);
   }
 
   // 2) Leads anunciados hace mas de 30 minutos que el asesor no ha contactado.

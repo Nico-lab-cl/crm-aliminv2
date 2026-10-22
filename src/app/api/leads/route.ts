@@ -7,6 +7,20 @@ import externalPrisma from "@/lib/externalPrisma";
 
 export const dynamic = "force-dynamic";
 
+/** Lo que dice de donde llego un lead. No se pisa cuando el lead ya existe. */
+const CAMPOS_DE_ORIGEN = [
+  "source",
+  "utmSource",
+  "utmMedium",
+  "utmCampaign",
+  "utmContent",
+  "utmTerm",
+  "adId",
+  "adName",
+  "formId",
+  "comoConocio",
+] as const;
+
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions as any);
 
@@ -297,8 +311,21 @@ export async function POST(req: Request) {
     // Check if lead exists to determine if we should auto-assign
     const existingLead = await (prisma as any).lead.findUnique({
       where: { email: leadData.email },
-      select: { id: true, assignedToId: true }
+      select: {
+        id: true,
+        assignedToId: true,
+        status: true,
+        ...Object.fromEntries(CAMPOS_DE_ORIGEN.map((campo) => [campo, true])),
+      }
     });
+
+    // Reingreso: un cliente que ya estaba en el CRM vuelve a llenar un
+    // formulario. Solo cuenta si llega por un webhook (la web o Meta): un
+    // asesor que crea a mano un correo que ya existe no es el cliente
+    // escribiendo de nuevo, y suscribirse al Newsletter tampoco es pedir que lo
+    // llamen.
+    const esReingreso =
+      !!existingLead && isExternalRequest && leadData.source !== "Newsletter";
 
     let assignedToId = null;
     const userSession = session as any;
@@ -307,7 +334,7 @@ export async function POST(req: Request) {
       // If an advisor is creating the lead, assign it to them directly
       assignedToId = userSession.user.id;
       leadData.assignedToId = assignedToId;
-    } else if (!existingLead) {
+    } else if (!existingLead || (esReingreso && !existingLead.assignedToId)) {
       const NICOLAS_ID = "initial-admin-id";
       const MARCELA_ID = "db1e6577-01b1-4615-b35e-0d50752452f3";
       const ORLANDO_ID = "a6ce92ca-f1a1-4dcf-a042-fda1c31ca485";
@@ -335,17 +362,69 @@ export async function POST(req: Request) {
       leadData.tags = leadData.tags ? `${leadData.tags}, Minipie` : "Minipie";
     }
 
+    const actualizacion: any = { ...leadData };
+
+    if (existingLead) {
+      // El origen es de donde llego el cliente la primera vez. Un reingreso
+      // por la web le cambiaba un lead de anuncio de Meta a "web aliminspa.cl"
+      // y se perdia que lo habia traido el anuncio. Solo se completa lo que
+      // estaba vacio.
+      for (const campo of CAMPOS_DE_ORIGEN) {
+        const actual = existingLead[campo];
+        if (actual !== null && actual !== undefined && String(actual).trim() !== "") {
+          delete actualizacion[campo];
+        }
+      }
+    }
+
+    if (esReingreso) {
+      // Vuelve a "sin contactar" con la escalera de recordatorios desde cero:
+      // createdAt pasa a ser esta llegada, asi que el aviso de 5 minutos cuenta
+      // desde ahora. La etapa solo retrocede desde CONTACTADO, igual que al
+      // desmarcar a mano: un lead en VISITA o RESERVADO no pierde lo avanzado.
+      Object.assign(actualizacion, {
+        createdAt: new Date(),
+        contacted: false,
+        contactedAt: null,
+        contactedById: null,
+        followupStage: 0,
+        lastActivity: "Volvió a llenar el formulario",
+        lastNoteAt: new Date(),
+      });
+      if ((existingLead.status || "").trim().toUpperCase() === "CONTACTADO") {
+        actualizacion.status = "NUEVO";
+      }
+    } else if (!isExternalRequest) {
+      actualizacion.createdAt = new Date(); // Arrival time!
+    }
+
     const lead = await (prisma as any).lead.upsert({
       where: { email: leadData.email },
-      update: {
-        ...leadData,
-        createdAt: new Date(), // Arrival time!
-      },
+      update: actualizacion,
       create: leadData,
     });
 
+    // El asesor que ya lo tenia se entera de que el cliente volvio. Sin esto
+    // el lead subia al tope de la lista en silencio, marcado como contactado,
+    // y solo se notaba si alguien lo veia en el grupo de WhatsApp.
+    if (esReingreso && existingLead.assignedToId) {
+      try {
+        const { createNotification } = await import("@/lib/notifications");
+        const nombre = [lead.firstName, lead.lastName].filter(Boolean).join(" ").trim() || "Un cliente";
+        await createNotification({
+          userId: existingLead.assignedToId,
+          title: `🔁 ${nombre} volvió a escribir`,
+          body: "Ya estaba en tus leads y llenó el formulario de nuevo. Quedó otra vez como sin contactar.",
+          leadId: lead.id,
+          type: "REINGRESO",
+        });
+      } catch (notifErr) {
+        console.error("Failed to send re-entry notification:", notifErr);
+      }
+    }
+
     // Trigger notification if it's a new assignment
-    if (!existingLead && assignedToId) {
+    if ((!existingLead || (esReingreso && !existingLead.assignedToId)) && assignedToId) {
       const { createNotification } = await import("@/lib/notifications");
       await createNotification({
         userId: assignedToId,
