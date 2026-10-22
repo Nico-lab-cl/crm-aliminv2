@@ -21,6 +21,12 @@ const CAMPOS_DE_ORIGEN = [
   "comoConocio",
 ] as const;
 
+/** lastActivity de un lead reabierto porque el cliente volvio a escribir. */
+const ACTIVIDAD_REINGRESO = "Volvió a llenar el formulario";
+
+/** Dos envios del mismo cliente dentro de este plazo son la misma llegada. */
+const VENTANA_MISMA_LLEGADA_MS = 3 * 60 * 1000;
+
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions as any);
 
@@ -315,17 +321,37 @@ export async function POST(req: Request) {
         id: true,
         assignedToId: true,
         status: true,
+        contacted: true,
+        createdAt: true,
+        lastActivity: true,
         ...Object.fromEntries(CAMPOS_DE_ORIGEN.map((campo) => [campo, true])),
       }
     });
 
-    // Reingreso: un cliente que ya estaba en el CRM vuelve a llenar un
-    // formulario. Solo cuenta si llega por un webhook (la web o Meta): un
-    // asesor que crea a mano un correo que ya existe no es el cliente
-    // escribiendo de nuevo, y suscribirse al Newsletter tampoco es pedir que lo
-    // llamen.
-    const esReingreso =
-      !!existingLead && isExternalRequest && leadData.source !== "Newsletter";
+    // El mismo envio puede llegar dos veces: n8n reintenta, el cliente aprieta
+    // dos veces, o el lead de Meta llega por los dos CRM. Si este lead se
+    // reabrio hace un momento y nadie lo ha tocado, es la misma llegada y no se
+    // vuelve a avisar.
+    const yaReabierto =
+      !!existingLead?.assignedToId &&
+      !existingLead.contacted &&
+      existingLead.lastActivity === ACTIVIDAD_REINGRESO &&
+      Date.now() - new Date(existingLead.createdAt).getTime() < VENTANA_MISMA_LLEGADA_MS;
+
+    // Un cliente que ya estaba en el CRM vuelve a llenar un formulario. Solo
+    // cuenta si llega por un webhook (la web o Meta): un asesor que crea a mano
+    // un correo que ya existe no es el cliente escribiendo de nuevo, y
+    // suscribirse al Newsletter tampoco es pedir que lo llamen.
+    const reabrir =
+      !!existingLead && isExternalRequest && leadData.source !== "Newsletter" && !yaReabierto;
+
+    // Si el lead ya tenia asesor es un reingreso: se le avisa a ese asesor.
+    //
+    // Si no tenia, se reparte como uno nuevo. Es el caso de casi todos los leads
+    // de Meta: el webhook del CRM web los inserta sin asesor un instante antes
+    // de que n8n los mande aca, y antes se quedaban sin asesor y sin aviso.
+    const esReingreso = reabrir && !!existingLead.assignedToId;
+    const sinDueno = reabrir && !existingLead.assignedToId;
 
     let assignedToId = null;
     const userSession = session as any;
@@ -334,7 +360,7 @@ export async function POST(req: Request) {
       // If an advisor is creating the lead, assign it to them directly
       assignedToId = userSession.user.id;
       leadData.assignedToId = assignedToId;
-    } else if (!existingLead || (esReingreso && !existingLead.assignedToId)) {
+    } else if (!existingLead || sinDueno) {
       const NICOLAS_ID = "initial-admin-id";
       const MARCELA_ID = "db1e6577-01b1-4615-b35e-0d50752452f3";
       const ORLANDO_ID = "a6ce92ca-f1a1-4dcf-a042-fda1c31ca485";
@@ -377,7 +403,7 @@ export async function POST(req: Request) {
       }
     }
 
-    if (esReingreso) {
+    if (reabrir) {
       // Vuelve a "sin contactar" con la escalera de recordatorios desde cero:
       // createdAt pasa a ser esta llegada, asi que el aviso de 5 minutos cuenta
       // desde ahora. La etapa solo retrocede desde CONTACTADO, igual que al
@@ -388,9 +414,11 @@ export async function POST(req: Request) {
         contactedAt: null,
         contactedById: null,
         followupStage: 0,
-        lastActivity: "Volvió a llenar el formulario",
-        lastNoteAt: new Date(),
       });
+      if (esReingreso) {
+        actualizacion.lastActivity = ACTIVIDAD_REINGRESO;
+        actualizacion.lastNoteAt = new Date();
+      }
       if ((existingLead.status || "").trim().toUpperCase() === "CONTACTADO") {
         actualizacion.status = "NUEVO";
       }
@@ -407,7 +435,7 @@ export async function POST(req: Request) {
     // El asesor que ya lo tenia se entera de que el cliente volvio. Sin esto
     // el lead subia al tope de la lista en silencio, marcado como contactado,
     // y solo se notaba si alguien lo veia en el grupo de WhatsApp.
-    if (esReingreso && existingLead.assignedToId) {
+    if (esReingreso) {
       try {
         const { createNotification } = await import("@/lib/notifications");
         const nombre = [lead.firstName, lead.lastName].filter(Boolean).join(" ").trim() || "Un cliente";
@@ -424,7 +452,7 @@ export async function POST(req: Request) {
     }
 
     // Trigger notification if it's a new assignment
-    if ((!existingLead || (esReingreso && !existingLead.assignedToId)) && assignedToId) {
+    if ((!existingLead || sinDueno) && assignedToId) {
       const { createNotification } = await import("@/lib/notifications");
       await createNotification({
         userId: assignedToId,
