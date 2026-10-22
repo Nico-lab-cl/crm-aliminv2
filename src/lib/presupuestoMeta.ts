@@ -32,6 +32,13 @@ import {
  */
 
 const HORA_ENVIO = 10;
+
+/**
+ * Lineas "🎯 CRM" por campaña (leads que llegaron, calientes, atendidos,
+ * avanzaron). Apagadas a pedido (22-10-2026): por ahora el aviso va solo con
+ * lo de Meta.
+ */
+const MOSTRAR_CALIDAD_CRM = false;
 const DIA = 86_400_000;
 
 type TipoResultado = "CONVERSACION" | "FORMULARIO" | "LEAD_WEB" | "ALCANCE" | "OTRO";
@@ -415,7 +422,7 @@ function variacion(ahora: number | null, antes: number | null): { texto: string;
 
 export async function textoPresupuesto(desde: string, hasta: string, titulo: string): Promise<string> {
   const meta = await leerMeta(desde, hasta);
-  const calidad = await calidadPorCampana(desde, hasta, meta);
+  const calidad = MOSTRAR_CALIDAD_CRM ? await calidadPorCampana(desde, hasta, meta) : new Map<string, Calidad>();
   const campanas = agruparCampanas(meta.semana);
   const previas = agruparCampanas(meta.anterior);
   for (const c of Array.from(campanas.values())) c.costoAntes = previas.get(c.id)?.costo ?? null;
