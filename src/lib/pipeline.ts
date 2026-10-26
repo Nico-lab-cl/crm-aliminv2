@@ -233,6 +233,13 @@ export const ASESORES_ACTIVOS = [MARCELA_ID, ORLANDO_ID, BARBARA_ID];
  */
 const POR_COLUMNA = 40;
 
+/**
+ * Fuentes de importaciones (base antigua): no son leads que hayamos generado
+ * nosotros y no entran al tablero. Misma lista que FUENTES_IMPORTADAS del lead
+ * score (crm-alimin-web/lib/lead_score.ts).
+ */
+const FUENTES_IMPORTADAS = ["kommo", "csv import", "old-db", "instagram", "clientify"];
+
 const COLUMNA = `CASE WHEN upper(l.status) IN (${ESTADOS_CLIENTE.map((s) => `'${s}'`).join(",")}) THEN 'RESERVADO'
                       WHEN upper(l.status) IN (${ETAPAS.map((e) => `'${e.id}'`).join(",")}) THEN upper(l.status)
                       ELSE 'NUEVO' END`;
@@ -254,7 +261,8 @@ export type TarjetaPipeline = {
 
 export async function leerTablero(asesores: string[], dias: number) {
   const filtro = `l."assignedToId" = ANY($1::text[])
-                  AND l."etapaDesde" > (now() AT TIME ZONE 'UTC') - make_interval(days => $2::int)`;
+                  AND l."etapaDesde" > (now() AT TIME ZONE 'UTC') - make_interval(days => $2::int)
+                  AND lower(trim(COALESCE(l.source, ''))) NOT IN (${FUENTES_IMPORTADAS.map((f) => `'${f}'`).join(",")})`;
 
   const conteos: { columna: string; leads: number }[] = await prisma.$queryRawUnsafe(
     `SELECT ${COLUMNA} AS columna, count(*)::int AS leads FROM "Lead" l WHERE ${filtro} GROUP BY 1`,
