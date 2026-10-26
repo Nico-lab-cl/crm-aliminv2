@@ -5,7 +5,9 @@ import {
   ESTADOS_CLIENTE,
   ETAPAS_CERRADAS,
   ETAPAS_YA_CONTACTADO,
+  FECHA_MINIMA,
   MOTIVOS_PERDIDA,
+  hoyEnChile,
   TIPOS_SEGUIMIENTO,
   canonico,
 } from "./pipelineEtapas";
@@ -227,11 +229,36 @@ export async function leerHistorial(leadId: string): Promise<EventoHistorial[]> 
 export const ASESORES_ACTIVOS = [MARCELA_ID, ORLANDO_ID, BARBARA_ID];
 
 /**
- * El período filtra por "etapaDesde": un lead aparece si entró a su etapa
- * actual dentro de los últimos N días. Mismo criterio que el tablero del CRM
- * web (crm-alimin-web/app/api/pipeline).
+ * Las fechas filtran por cuándo llegó el lead ("createdAt", en hora de Chile):
+ * el tablero muestra en qué etapa está hoy cada lead que llegó en el rango.
+ * Mismo criterio que el tablero del CRM web (crm-alimin-web/app/api/pipeline).
  */
 const POR_COLUMNA = 40;
+
+export { FECHA_MINIMA, hoyEnChile };
+
+const FECHA = /^\d{4}-\d{2}-\d{2}$/;
+function restarDias(fecha: string, dias: number) {
+  const d = new Date(`${fecha}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - dias);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Rango pedido (?desde&hasta, o ?dias), siempre dentro de [FECHA_MINIMA, hoy]. */
+export function rangoDe(params: URLSearchParams) {
+  const hoy = hoyEnChile();
+  let desde = params.get("desde") || "";
+  let hasta = params.get("hasta") || "";
+  if (!FECHA.test(desde) || !FECHA.test(hasta)) {
+    const dias = Math.min(Math.max(parseInt(params.get("dias") || "30", 10) || 30, 1), 365);
+    desde = restarDias(hoy, dias - 1);
+    hasta = hoy;
+  }
+  if (desde < FECHA_MINIMA) desde = FECHA_MINIMA;
+  if (hasta > hoy) hasta = hoy;
+  if (desde > hasta) desde = hasta;
+  return { desde, hasta };
+}
 
 /**
  * Fuentes de importaciones (base antigua): no son leads que hayamos generado
@@ -259,15 +286,17 @@ export type TarjetaPipeline = {
   visitDate: string | null;
 };
 
-export async function leerTablero(asesores: string[], dias: number) {
+export async function leerTablero(asesores: string[], desde: string, hasta: string) {
   const filtro = `l."assignedToId" = ANY($1::text[])
-                  AND l."etapaDesde" > (now() AT TIME ZONE 'UTC') - make_interval(days => $2::int)
+                  AND l."createdAt" >= (($2::date)::timestamp AT TIME ZONE 'America/Santiago') AT TIME ZONE 'UTC'
+                  AND l."createdAt" <  (($3::date + 1)::timestamp AT TIME ZONE 'America/Santiago') AT TIME ZONE 'UTC'
                   AND lower(trim(COALESCE(l.source, ''))) NOT IN (${FUENTES_IMPORTADAS.map((f) => `'${f}'`).join(",")})`;
 
   const conteos: { columna: string; leads: number }[] = await prisma.$queryRawUnsafe(
     `SELECT ${COLUMNA} AS columna, count(*)::int AS leads FROM "Lead" l WHERE ${filtro} GROUP BY 1`,
     asesores,
-    dias
+    desde,
+    hasta
   );
 
   const filas: any[] = await prisma.$queryRawUnsafe(
@@ -283,7 +312,8 @@ export async function leerTablero(asesores: string[], dias: number) {
      ) x WHERE n <= ${POR_COLUMNA}
      ORDER BY "etapaDesde" DESC`,
     asesores,
-    dias
+    desde,
+    hasta
   );
 
   const iso = (d: any) => (d ? new Date(d).toISOString() : null);

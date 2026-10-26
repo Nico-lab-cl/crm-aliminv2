@@ -44,6 +44,11 @@ export function nombreEstado(status: unknown): string {
   return s.charAt(0) + s.slice(1).toLowerCase().replace(/_/g, " ");
 }
 
+/** El tablero no permite fechas anteriores a esta: antes no hay leads propios que mirar. */
+export const FECHA_MINIMA = "2026-05-01";
+
+export const hoyEnChile = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
+
 export const MOTIVOS_PERDIDA = [
   "No califica / sin presupuesto",
   "Compró en otro lugar",

@@ -8,7 +8,7 @@ import { formatDistanceToNowStrict, format, differenceInCalendarDays } from "dat
 import { es } from "date-fns/locale";
 import { CalendarClock, MessageCircle, Phone, ArrowRightLeft } from "lucide-react";
 import GestionLead, { Modo } from "@/components/pipeline/GestionLead";
-import { ETAPAS, nombreEstado } from "@/lib/pipelineEtapas";
+import { ETAPAS, FECHA_MINIMA, hoyEnChile, nombreEstado } from "@/lib/pipelineEtapas";
 
 type Tarjeta = {
   id: string;
@@ -29,11 +29,13 @@ type Datos = {
   conteos: Record<string, number>;
   tarjetas: Tarjeta[];
   porColumna: number;
-  dias: number;
+  desde: string;
+  hasta: string;
   asesores: { id: string; name: string }[];
 };
 
 const PERIODOS = [7, 30, 90];
+const fechaLarga = (f: string) => format(new Date(`${f}T12:00:00`), "d MMM yyyy", { locale: es });
 
 const PILL_BANDA: Record<string, string> = {
   CALIENTE: "bg-orange-100 text-orange-700",
@@ -66,7 +68,9 @@ export default function PipelinePage() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const esAdmin = (session?.user as any)?.role === "ADMIN";
-  const [periodo, setPeriodo] = useState(30);
+  const [periodo, setPeriodo] = useState<number | "RANGO">(30);
+  const [desde, setDesde] = useState(FECHA_MINIMA);
+  const [hasta, setHasta] = useState(hoyEnChile);
   const [asesor, setAsesor] = useState("");
   const [datos, setDatos] = useState<Datos | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -81,7 +85,7 @@ export default function PipelinePage() {
 
   const cargar = useCallback(async () => {
     try {
-      const qs = new URLSearchParams({ dias: String(periodo) });
+      const qs = new URLSearchParams(periodo === "RANGO" ? { desde, hasta } : { dias: String(periodo) });
       if (asesor) qs.set("asesor", asesor);
       const res = await fetch(`/api/pipeline?${qs}`, { cache: "no-store" });
       if (!res.ok) throw new Error();
@@ -92,7 +96,7 @@ export default function PipelinePage() {
     } finally {
       setCargando(false);
     }
-  }, [periodo, asesor]);
+  }, [periodo, desde, hasta, asesor]);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -129,34 +133,53 @@ export default function PipelinePage() {
         <h1 className="text-2xl font-black text-primary tracking-tight">Pipeline</h1>
         <p className="text-[11px] font-bold text-slate-400 mt-0.5">Ordena a tus clientes por etapa</p>
 
-        <div className="flex gap-2 mt-3">
-          {esAdmin && (
-            <select
-              value={asesor}
-              onChange={(e) => setAsesor(e.target.value)}
-              className="flex-1 min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-bold text-slate-600"
-            >
-              <option value="">Todos los asesores</option>
-              {(datos?.asesores || []).map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
-          )}
-          <div className={clsx("flex rounded-xl border border-slate-200 overflow-hidden bg-slate-50", !esAdmin && "flex-1")}>
-            {PERIODOS.map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriodo(p)}
-                className={clsx(
-                  "flex-1 px-3 py-2 text-[11px] font-black whitespace-nowrap",
-                  periodo === p ? "bg-primary text-white" : "text-slate-500"
-                )}
-              >
-                {p} días
-              </button>
+        {esAdmin && (
+          <select
+            value={asesor}
+            onChange={(e) => setAsesor(e.target.value)}
+            className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-bold text-slate-600"
+          >
+            <option value="">Todos los asesores</option>
+            {(datos?.asesores || []).map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
             ))}
-          </div>
+          </select>
+        )}
+        <div className="flex mt-2 rounded-xl border border-slate-200 overflow-hidden bg-slate-50">
+          {[...PERIODOS, "RANGO" as const].map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriodo(p)}
+              className={clsx(
+                "flex-1 px-2 py-2 text-[11px] font-black whitespace-nowrap",
+                periodo === p ? "bg-primary text-white" : "text-slate-500"
+              )}
+            >
+              {p === "RANGO" ? "Fechas" : `${p} días`}
+            </button>
+          ))}
         </div>
+        {periodo === "RANGO" && (
+          <div className="flex items-center gap-2 mt-2">
+            <input
+              type="date"
+              value={desde}
+              min={FECHA_MINIMA}
+              max={hasta}
+              onChange={(e) => e.target.value && setDesde(e.target.value)}
+              className="flex-1 min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-[12px] font-bold text-slate-600"
+            />
+            <span className="text-[11px] font-bold text-slate-400">a</span>
+            <input
+              type="date"
+              value={hasta}
+              min={desde}
+              max={hoyEnChile()}
+              onChange={(e) => e.target.value && setHasta(e.target.value)}
+              className="flex-1 min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-[12px] font-bold text-slate-600"
+            />
+          </div>
+        )}
 
         <div className="flex gap-2 overflow-x-auto pt-3 -mx-6 px-6" style={{ scrollbarWidth: "none" }}>
           {ETAPAS.map((e) => {
@@ -187,7 +210,7 @@ export default function PipelinePage() {
       ) : datos ? (
         <>
           <p className="px-4 pt-3 text-[10px] text-slate-400 font-semibold">
-            Clientes que entraron a su etapa en los últimos {datos.dias} días. Desliza para ver las demás etapas.
+            Clientes que llegaron entre el {fechaLarga(datos.desde)} y el {fechaLarga(datos.hasta)}. Desliza para ver las demás etapas.
           </p>
           <div
             ref={tablero}
