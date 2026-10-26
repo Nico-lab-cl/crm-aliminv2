@@ -181,7 +181,7 @@ export default function GestionLead({ lead, modoInicial = "contacto", tipoInicia
           </Campo>
 
           {pideProxima && (
-            <Campo titulo={modo === "etapa" ? "Próxima acción (obligatoria)" : "Próxima acción"}>
+            <Campo titulo="Próxima acción (opcional)">
               <div className="flex flex-wrap gap-2">
                 {PROXIMAS_ACCIONES.map((a) => (
                   <button key={a} onClick={() => setProximaAccion(proximaAccion === a ? "" : a)} className={chip(proximaAccion === a)}>{a}</button>

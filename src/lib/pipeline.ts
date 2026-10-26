@@ -1,4 +1,5 @@
 import prisma from "./prisma";
+import { BARBARA_ID, MARCELA_ID, ORLANDO_ID } from "./assignment";
 import {
   ETAPAS,
   ESTADOS_CLIENTE,
@@ -87,9 +88,9 @@ export async function moverEtapa(leadId: string, usuario: { id: string; role?: s
   if (etapa === "PERDIDO" && !MOTIVOS_PERDIDA.includes(cambio.motivoPerdida || "")) {
     throw new ErrorPipeline("Elige el motivo por el que se perdió");
   }
-  // Un lead abierto sin próxima acción es un lead olvidado: el pipeline no lo deja pasar.
-  if (!cerrada && (!proximaAccion || !proximaAccionAt)) {
-    throw new ErrorPipeline("Indica la próxima acción y su fecha");
+  // La próxima acción es opcional al mover; si se indica, va con fecha.
+  if (proximaAccion && !proximaAccionAt) {
+    throw new ErrorPipeline("Indica la fecha de la próxima acción");
   }
 
   const comentario = (cambio.comentario || "").trim().slice(0, 500) || null;
@@ -98,8 +99,9 @@ export async function moverEtapa(leadId: string, usuario: { id: string; role?: s
   return conAutor({ usuarioId: usuario.id, origen: "ASESOR", motivo }, async (tx) => {
     const data: any = {
       status: etapa,
-      proximaAccion: cerrada ? null : proximaAccion,
-      proximaAccionAt: cerrada ? null : proximaAccionAt,
+      // Sin una próxima acción nueva, se conserva la que tenía (salvo al cerrar).
+      proximaAccion: cerrada ? null : proximaAccion ?? undefined,
+      proximaAccionAt: cerrada ? null : proximaAccionAt ?? undefined,
       motivoPerdida: etapa === "PERDIDO" ? cambio.motivoPerdida : null,
       lastActivity: `Etapa: ${etapa.charAt(0) + etapa.slice(1).toLowerCase()}`,
       lastNoteAt: new Date(),
@@ -218,36 +220,22 @@ export async function leerHistorial(leadId: string): Promise<EventoHistorial[]> 
 }
 
 // ---------------------------------------------------------------------------
-// Pantalla del pipeline
+// Tablero del pipeline
 // ---------------------------------------------------------------------------
 
-/**
- * Qué cuenta como lead "en el pipeline". Hay ~49.000 leads en NUEVO, casi todos
- * importaciones viejas, y ~4.500 en CONTACTADO porque se marca solo al
- * responder; mostrarlos taparía lo que sirve. Entra lo que está en una etapa
- * abierta desde hace menos de DIAS_ABIERTOS, todo lo que tenga próxima acción
- * (así un lead antiguo vuelve al agendarle algo desde la ficha), los clientes y
- * los perdidos recientes.
- */
-const DIAS_ABIERTOS = 60;
-const DIAS_PERDIDOS = 90;
-const POR_PESTANA = 60;
+/** Los asesores que trabajan leads hoy; el administrador ve a estos tres. */
+export const ASESORES_ACTIVOS = [MARCELA_ID, ORLANDO_ID, BARBARA_ID];
 
-// Fin del día de hoy en Chile, expresado como timestamp UTC (así se guardan las fechas).
-const FIN_DE_HOY = `(((date_trunc('day', now() AT TIME ZONE 'America/Santiago') + interval '1 day') AT TIME ZONE 'America/Santiago') AT TIME ZONE 'UTC')`;
-const AHORA_UTC = `(now() AT TIME ZONE 'UTC')`;
+/**
+ * El período filtra por "etapaDesde": un lead aparece si entró a su etapa
+ * actual dentro de los últimos N días. Mismo criterio que el tablero del CRM
+ * web (crm-alimin-web/app/api/pipeline).
+ */
+const POR_COLUMNA = 40;
 
 const COLUMNA = `CASE WHEN upper(l.status) IN (${ESTADOS_CLIENTE.map((s) => `'${s}'`).join(",")}) THEN 'RESERVADO'
                       WHEN upper(l.status) IN (${ETAPAS.map((e) => `'${e.id}'`).join(",")}) THEN upper(l.status)
                       ELSE 'NUEVO' END`;
-
-const EN_PIPELINE = `(CASE
-  WHEN upper(l.status) IN ('RESERVADO', ${ESTADOS_CLIENTE.map((s) => `'${s}'`).join(",")}) THEN true
-  WHEN upper(l.status) = 'PERDIDO' THEN l."etapaDesde" > ${AHORA_UTC} - interval '${DIAS_PERDIDOS} days'
-  ELSE l."etapaDesde" > ${AHORA_UTC} - interval '${DIAS_ABIERTOS} days' OR l."proximaAccionAt" IS NOT NULL
-END)`;
-
-const ABIERTO = `upper(l.status) NOT IN (${ETAPAS_CERRADAS.map((s) => `'${s}'`).join(",")})`;
 
 export type TarjetaPipeline = {
   id: string;
@@ -258,69 +246,36 @@ export type TarjetaPipeline = {
   etapaDesde: string | null;
   proximaAccion: string | null;
   proximaAccionAt: string | null;
-  ultimoSeguimiento: { tipo: string; resultado: string | null; fecha: string } | null;
   banda: string | null;
   score: number | null;
   asesor: string | null;
   visitDate: string | null;
 };
 
-export async function leerPipeline(asesorId: string | null, pestana: string) {
-  const filtroAsesor = `($1::text IS NULL OR l."assignedToId" = $1)`;
+export async function leerTablero(asesores: string[], dias: number) {
+  const filtro = `l."assignedToId" = ANY($1::text[])
+                  AND l."etapaDesde" > (now() AT TIME ZONE 'UTC') - make_interval(days => $2::int)`;
 
-  const [conteos]: any[] = await prisma.$queryRawUnsafe(
-    `SELECT
-       count(*) FILTER (WHERE ${ABIERTO} AND l."proximaAccionAt" < ${FIN_DE_HOY})::int AS "HOY",
-       count(*) FILTER (WHERE ${ABIERTO} AND l."proximaAccionAt" < ${AHORA_UTC})::int AS "ATRASADOS",
-       count(*) FILTER (WHERE ${ABIERTO} AND upper(l.status) <> 'NUEVO' AND l."proximaAccionAt" IS NULL)::int AS "SIN_ACCION",
-       ${ETAPAS.map((e) => `count(*) FILTER (WHERE ${COLUMNA} = '${e.id}')::int AS "${e.id}"`).join(",\n       ")}
-     FROM "Lead" l
-     WHERE ${filtroAsesor} AND ${EN_PIPELINE}`,
-    asesorId
+  const conteos: { columna: string; leads: number }[] = await prisma.$queryRawUnsafe(
+    `SELECT ${COLUMNA} AS columna, count(*)::int AS leads FROM "Lead" l WHERE ${filtro} GROUP BY 1`,
+    asesores,
+    dias
   );
 
-  let filtro: string;
-  let orden: string;
-  switch (pestana) {
-    case "HOY":
-      filtro = `${ABIERTO} AND l."proximaAccionAt" < ${FIN_DE_HOY}`;
-      orden = `l."proximaAccionAt" ASC`;
-      break;
-    case "SIN_ACCION":
-      filtro = `${ABIERTO} AND upper(l.status) <> 'NUEVO' AND l."proximaAccionAt" IS NULL`;
-      // Arriba los que más vale la pena retomar.
-      orden = `s.score DESC NULLS LAST, l."etapaDesde" DESC`;
-      break;
-    case "NUEVO":
-      filtro = `${COLUMNA} = 'NUEVO'`;
-      orden = `l."createdAt" DESC`;
-      break;
-    case "PERDIDO":
-    case "RESERVADO":
-      filtro = `${COLUMNA} = '${pestana}'`;
-      orden = `l."etapaDesde" DESC NULLS LAST`;
-      break;
-    default:
-      filtro = `${COLUMNA} = '${ETAPAS.find((e) => e.id === pestana)?.id ?? "CONTACTADO"}'`;
-      orden = `l."proximaAccionAt" ASC NULLS LAST, s.score DESC NULLS LAST, l."etapaDesde" DESC`;
-  }
-
   const filas: any[] = await prisma.$queryRawUnsafe(
-    `SELECT l.id, l."firstName", l."lastName", l.phone, l.status, ${COLUMNA} AS columna,
-            l."etapaDesde", l."proximaAccion", l."proximaAccionAt", l."visitDate",
-            u.name AS asesor, s.banda, s.score,
-            us.tipo AS us_tipo, us.resultado AS us_resultado, us.created_at AS us_fecha
-       FROM "Lead" l
-       LEFT JOIN "User" u ON u.id = l."assignedToId"
-       LEFT JOIN public.lead_score s ON s.lead_id = l.id
-       LEFT JOIN LATERAL (
-         SELECT tipo, resultado, created_at FROM lead_seguimientos
-          WHERE lead_id = l.id ORDER BY created_at DESC LIMIT 1
-       ) us ON true
-      WHERE ${filtroAsesor} AND ${EN_PIPELINE} AND ${filtro}
-      ORDER BY ${orden}
-      LIMIT ${POR_PESTANA}`,
-    asesorId
+    `SELECT * FROM (
+       SELECT l.id, l."firstName", l."lastName", l.phone, l.status, ${COLUMNA} AS columna,
+              l."etapaDesde", l."proximaAccion", l."proximaAccionAt", l."visitDate",
+              u.name AS asesor, s.banda, s.score,
+              row_number() OVER (PARTITION BY ${COLUMNA} ORDER BY l."etapaDesde" DESC) AS n
+         FROM "Lead" l
+         LEFT JOIN "User" u ON u.id = l."assignedToId"
+         LEFT JOIN public.lead_score s ON s.lead_id = l.id
+        WHERE ${filtro}
+     ) x WHERE n <= ${POR_COLUMNA}
+     ORDER BY "etapaDesde" DESC`,
+    asesores,
+    dias
   );
 
   const iso = (d: any) => (d ? new Date(d).toISOString() : null);
@@ -333,12 +288,11 @@ export async function leerPipeline(asesorId: string | null, pestana: string) {
     etapaDesde: iso(f.etapaDesde),
     proximaAccion: f.proximaAccion,
     proximaAccionAt: iso(f.proximaAccionAt),
-    ultimoSeguimiento: f.us_tipo ? { tipo: f.us_tipo, resultado: f.us_resultado, fecha: iso(f.us_fecha)! } : null,
     banda: f.banda,
     score: f.score,
     asesor: f.asesor,
     visitDate: iso(f.visitDate),
   }));
 
-  return { conteos, tarjetas, total: conteos[pestana] ?? 0, porPestana: POR_PESTANA, diasAbiertos: DIAS_ABIERTOS };
+  return { conteos: Object.fromEntries(conteos.map((c) => [c.columna, c.leads])), tarjetas, porColumna: POR_COLUMNA };
 }
