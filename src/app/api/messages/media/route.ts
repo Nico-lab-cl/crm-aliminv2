@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { WEB_CHAT_PLATFORM } from "@/lib/web-chat";
 import { ErrorDeAdjunto, crearMensajeConAdjunto, validarAdjunto } from "@/lib/media";
 import { marcarContactado } from "@/lib/followups";
+import { asignarAlQueResponde } from "@/lib/ali";
 
 export const dynamic = "force-dynamic";
 
@@ -73,12 +74,7 @@ export async function POST(req: Request) {
 
     // El primero que responde se queda el lead, igual que con un mensaje de
     // texto. Un audio es una respuesta como cualquier otra.
-    if (conversation.leadId && !conversation.lead?.assignedToId) {
-      await (prisma as any).lead.update({
-        where: { id: conversation.leadId },
-        data: { assignedToId: advisorId },
-      });
-    }
+    await asignarAlQueResponde(conversation, advisorId);
 
     const resultado = await crearMensajeConAdjunto({
       conversationId: conversation.id,

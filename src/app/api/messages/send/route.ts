@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { WEB_CHAT_PLATFORM } from "@/lib/web-chat";
 import { marcarContactado } from "@/lib/followups";
+import { asignarAlQueResponde } from "@/lib/ali";
 
 export async function POST(req: Request) {
   const session = (await getServerSession(authOptions as any)) as any;
@@ -65,12 +66,9 @@ export async function POST(req: Request) {
 
     // 3. AUTO-ASIGNACIÓN: Si el Lead no tiene asesor, asignarlo al actual
     const senderId = (session.user as any).id;
-    if (conversation.leadId && !conversation.lead.assignedToId) {
-      await (prisma as any).lead.update({
-        where: { id: conversation.leadId },
-        data: { assignedToId: senderId }
-      });
-    }
+    //    Si Ali había pedido un asesor, el que responde se lo queda aunque la
+    //    rueda ya se lo hubiera dado a otro (ver lib/ali.ts).
+    await asignarAlQueResponde(conversation, senderId);
 
     // 4. Guardar el mensaje del asesor en la base de datos
     const newMessage = await (prisma as any).message.create({

@@ -375,7 +375,11 @@ export default function InboxPage() {
                     </span>
                   </div>
                   <p className="text-sm text-slate-500 truncate flex items-center gap-1">
-                    {conv.messages[0] && conv.messages[0].senderType !== "advisor" ? (
+                    {conv.messages[0]?.senderType === "ali" ? (
+                      <span className="text-violet-500 font-black text-[9px] uppercase tracking-tighter opacity-80 flex-shrink-0">
+                        {conv.messages[0]?.sourceType === "HANDOFF" ? "Ali pide asesor:" : "Ali:"}
+                      </span>
+                    ) : conv.messages[0] && conv.messages[0].senderType !== "advisor" ? (
                       <span className={`font-black text-[9px] uppercase tracking-tighter opacity-70 flex-shrink-0 ${conv.messages[0]?.sourceType === 'COMMENT' ? 'text-rose-500' : 'text-primary'}`}>
                         {conv.messages[0]?.sourceType === 'COMMENT' ? 'Comentario:' : 'Mensaje:'}
                       </span>

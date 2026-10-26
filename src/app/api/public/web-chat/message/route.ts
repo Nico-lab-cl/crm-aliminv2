@@ -8,6 +8,7 @@ import {
   rateLimit,
   webChatPsid,
 } from "@/lib/web-chat";
+import { avisarMensajeDelVisitante } from "@/lib/ali";
 
 export const dynamic = "force-dynamic";
 
@@ -104,7 +105,9 @@ export async function POST(req: Request) {
       ultimoDelVisitante &&
       Date.now() - ultimoDelVisitante.createdAt.getTime() < VENTANA_AVISO_MS;
 
-    if (!esRafaga) {
+    // Mientras Ali atiende sola, los asesores no reciben push por cada mensaje:
+    // se enteran cuando ella pide un asesor (ver lib/ali.ts).
+    if (!esRafaga && (await avisarMensajeDelVisitante(conversation.id))) {
       await notifyAdvisorsOfWebChat({
         leadId: conversation.leadId,
         visitorName: conversation.metaName || "Un visitante",

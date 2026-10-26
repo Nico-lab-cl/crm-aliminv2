@@ -8,6 +8,7 @@ import {
   rateLimit,
   webChatPsid,
 } from "@/lib/web-chat";
+import { avisarMensajeDelVisitante } from "@/lib/ali";
 import { ErrorDeAdjunto, crearMensajeConAdjunto, textoPorDefecto, validarAdjunto } from "@/lib/media";
 
 export const dynamic = "force-dynamic";
@@ -91,12 +92,15 @@ export async function POST(req: Request) {
 
     // A diferencia del texto, un adjunto no se agrupa por rafaga: si el cliente
     // se tomo el trabajo de grabar un audio o sacar una foto, el asesor tiene
-    // que enterarse aunque venga escribiendo hace un rato.
-    await notifyAdvisorsOfWebChat({
-      leadId: conversation.leadId,
-      visitorName: conversation.metaName || "Un visitante",
-      text: texto || textoPorDefecto(adjunto.kind),
-    });
+    // que enterarse aunque venga escribiendo hace un rato. Mientras Ali atiende
+    // sola no hay push: si es un audio, Ali lo deriva y ahí avisa.
+    if (await avisarMensajeDelVisitante(conversation.id)) {
+      await notifyAdvisorsOfWebChat({
+        leadId: conversation.leadId,
+        visitorName: conversation.metaName || "Un visitante",
+        text: texto || textoPorDefecto(adjunto.kind),
+      });
+    }
 
     return NextResponse.json(resultado);
   } catch (error) {

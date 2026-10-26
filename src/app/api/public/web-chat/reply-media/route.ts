@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { WEB_CHAT_PLATFORM, checkWebChatKey, rateLimit } from "@/lib/web-chat";
 import { ErrorDeAdjunto, crearMensajeConAdjunto, validarAdjunto } from "@/lib/media";
 import { marcarContactado } from "@/lib/followups";
+import { asignarAlQueResponde } from "@/lib/ali";
 
 export const dynamic = "force-dynamic";
 
@@ -65,12 +66,7 @@ export async function POST(req: Request) {
     }
 
     // El primero que responde se queda el lead, igual que en la bandeja movil.
-    if (conversation.leadId && !conversation.lead?.assignedToId) {
-      await prisma.lead.update({
-        where: { id: conversation.leadId },
-        data: { assignedToId: advisor.id },
-      });
-    }
+    await asignarAlQueResponde(conversation, advisor.id);
 
     const resultado = await crearMensajeConAdjunto({
       conversationId: conversation.id,

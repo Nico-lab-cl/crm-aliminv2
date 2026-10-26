@@ -310,7 +310,11 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
       >
         {messages.map((msg, i) => {
           if (!msg) return null;
-          const isMe = msg.senderType === "advisor";
+          // Ali, la asistente con IA del chat web, va del lado del equipo pero
+          // con otro color, para que nadie confunda lo que dijo con lo que dijo
+          // un asesor.
+          const esAli = msg.senderType === "ali";
+          const isMe = msg.senderType === "advisor" || esAli;
 
           let formattedTime = "";
           try {
@@ -331,10 +335,17 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
               {/* Message Bubble */}
               <div className={`
                 max-w-[85%] px-4 py-3 rounded-2xl text-sm shadow-sm
-                ${isMe
+                ${esAli
+                  ? "bg-violet-50 text-slate-800 rounded-tr-none border border-violet-200"
+                  : isMe
                   ? "bg-primary text-white rounded-tr-none"
                   : "bg-white text-slate-800 rounded-tl-none border border-slate-100 text-[15px]"}
               `}>
+                {esAli && (
+                  <div className="text-[10px] font-black uppercase text-violet-600 mb-1">
+                    {msg.sourceType === "HANDOFF" ? "Ali (IA) · pidió un asesor" : "Ali (IA)"}
+                  </div>
+                )}
                 {msg.sourceType === "COMMENT" && !isMe && (
                    <div className="text-[10px] font-black uppercase text-pink-500 mb-2 flex items-center gap-1">
                       <MessageCircle size={10} /> Comentario Público
@@ -422,7 +433,7 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
                 <span className="text-[9px] font-bold text-slate-400 uppercase">
                    {formattedTime}
                 </span>
-                {isMe && (
+                {isMe && !esAli && (
                   <div className="flex items-center gap-1 text-[9px] font-black text-primary uppercase">
                     <ShieldCheck size={10} /> {msg.sender?.name || "Asesor"}
                   </div>
@@ -432,6 +443,13 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
           );
         })}
       </div>
+
+      {messages.some((m) => m?.senderType === "ali") &&
+        !messages.some((m) => m?.senderType === "advisor") && (
+          <div className="mx-4 mb-2 px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-[12px] text-violet-700">
+            Ali (IA) está atendiendo este chat. Si respondes, Ali se desactiva y la conversación queda contigo.
+          </div>
+        )}
 
       {error && (
         <div className="mx-4 mb-2 px-3 py-2 rounded-xl bg-red-50 border border-red-100 flex items-start gap-2">

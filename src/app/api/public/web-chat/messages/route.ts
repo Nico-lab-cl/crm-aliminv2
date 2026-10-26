@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { WEB_CHAT_PLATFORM, checkWebChatKey, rateLimit, webChatPsid } from "@/lib/web-chat";
+import { ALI_NOMBRE, ALI_SENDER } from "@/lib/ali";
 
 export const dynamic = "force-dynamic";
 
@@ -81,8 +82,14 @@ export async function GET(req: Request) {
       messages: messages.map((m: any) => ({
         id: m.id,
         text: m.text,
-        deAsesor: m.senderType === "advisor",
-        autor: m.senderType === "advisor" ? m.sender?.name || "Asesor" : null,
+        // Ali se pinta del lado del equipo, igual que un asesor.
+        deAsesor: m.senderType === "advisor" || m.senderType === ALI_SENDER,
+        autor:
+          m.senderType === "advisor"
+            ? m.sender?.name || "Asesor"
+            : m.senderType === ALI_SENDER
+              ? ALI_NOMBRE
+              : null,
         createdAt: m.createdAt,
         // El widget recibe el id del adjunto, no una URL del CRM. La URL
         // definitiva la arma el sitio público contra su propio dominio, para
