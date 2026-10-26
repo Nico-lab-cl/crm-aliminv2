@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { conAutor } from "@/lib/pipeline";
 import { createNotification } from "@/lib/notifications";
 
 export async function GET(
@@ -36,18 +37,24 @@ export async function PATCH(
   try {
     const data = await req.json();
 
-    const updatedLead = await (prisma as any).lead.update({
-      where: { id: params.id },
-      data: {
-        ...data,
-        lastNoteAt: data.notes ? new Date() : undefined,
-      },
-      include: {
-        assignedTo: {
-          select: { id: true, name: true, image: true },
+    const actualizar = (db: any) =>
+      db.lead.update({
+        where: { id: params.id },
+        data: {
+          ...data,
+          lastNoteAt: data.notes ? new Date() : undefined,
         },
-      },
-    });
+        include: {
+          assignedTo: {
+            select: { id: true, name: true, image: true },
+          },
+        },
+      });
+
+    // Si cambia la etapa, el historial la anota a nombre del asesor.
+    const updatedLead = data.status
+      ? await conAutor({ usuarioId: (session as any).user?.id, origen: "ASESOR" }, actualizar)
+      : await actualizar(prisma);
 
     // TRIGGER NOTIFICATION if assignedToId changed
     if (data.assignedToId) {

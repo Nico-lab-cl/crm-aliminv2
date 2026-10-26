@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { conAutor } from "@/lib/pipeline";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +66,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       nuevaEtapa = "NUEVO";
     }
 
-    const actualizado = await (prisma as any).lead.update({
+    const actualizado = await conAutor({ usuarioId: advisorId, origen: "ASESOR" }, (tx) => tx.lead.update({
       where: { id: params.id },
       data: contactado
         ? {
@@ -98,7 +99,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         contactedById: true,
         contactedBy: { select: { name: true } },
       },
-    });
+    }));
 
     return NextResponse.json(actualizado);
   } catch (error) {

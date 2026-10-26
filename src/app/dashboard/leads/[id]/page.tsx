@@ -8,6 +8,7 @@ import {
   Meh, Smile, Laugh, Megaphone, ExternalLink, History,
   ChevronDown, UserCheck, PenTool, X, FileCheck, CheckCircle2, Clock
 } from "lucide-react";
+import HistorialLead from "@/components/pipeline/HistorialLead";
 import { getAdVideoUrl } from "@/lib/adVideos";
 import { getAdImages } from "@/lib/adImages";
 import { useRouter } from "next/navigation";
@@ -34,6 +35,8 @@ interface Lead {
   contacted?: boolean;
   contactedAt?: string | null;
   contactedBy?: { name: string } | null;
+  proximaAccion?: string | null;
+  proximaAccionAt?: string | null;
 }
 
 interface UserOption {
@@ -431,6 +434,18 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
           </div>
         </button>
       </div>
+
+      {/* Pipeline: próxima acción, contactos y cambios de etapa */}
+      <HistorialLead
+        lead={{
+          id: lead.id,
+          nombre: `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || "Sin nombre",
+          status: lead.status,
+          proximaAccion: lead.proximaAccion,
+          proximaAccionAt: lead.proximaAccionAt,
+        }}
+        onCambio={(cambios) => setLead({ ...lead, ...cambios })}
+      />
 
       {/* Interest Rating (Emojis) */}
       <div className="px-4 py-2 mb-4">

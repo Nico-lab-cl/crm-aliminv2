@@ -70,6 +70,15 @@ model Lead {
   visitReminderSent1d Boolean @default(false)
   visitReminderSent1h Boolean @default(false)
 
+  // Pipeline comercial (columnas agregadas a mano: prisma/migrations_manual/2026-10-26_pipeline.sql).
+  // El historial de etapas y los seguimientos viven en lead_etapa_historial y
+  // lead_seguimientos, que se leen con SQL (ver src/lib/pipeline.ts).
+  proximaAccion   String?
+  proximaAccionAt DateTime?
+  motivoPerdida   String?
+  /// Desde cuándo está en la etapa actual. La mantiene un trigger de la base; no escribir.
+  etapaDesde      DateTime?
+
   // Contacto del asesor y escalamiento de seguimiento
   contacted      Boolean   @default(false) // El asesor confirma que ya atendió al cliente
   contactedAt    DateTime?

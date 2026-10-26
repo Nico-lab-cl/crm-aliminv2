@@ -1,6 +1,6 @@
 "use client";
 
-import { Users, Activity, LayoutGrid, Plus, PenTool, MessageSquare } from "lucide-react";
+import { Users, Activity, LayoutGrid, Plus, PenTool, MessageSquare, Kanban } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import clsx from "clsx";
@@ -49,10 +49,13 @@ export default function BottomNav() {
   const isSigningsActive = currentMenu === "signings";
   const isInboxActive = pathname === "/inbox";
   const isActividadActive = pathname === "/actividad";
+  const isPipelineActive = pathname === "/pipeline";
 
-  const handleNav = (target: "leads" | "visits" | "signings" | "actividad" | "inbox") => {
+  const handleNav = (target: "leads" | "pipeline" | "visits" | "signings" | "actividad" | "inbox") => {
     if (target === "leads") {
       router.push("/dashboard");
+    } else if (target === "pipeline") {
+      router.push("/pipeline");
     } else if (target === "visits") {
       router.push("/dashboard?menu=visits");
       markVisitsAsRead();
@@ -96,6 +99,17 @@ export default function BottomNav() {
             >
               <Users size={24} strokeWidth={isLeadsActive ? 2.5 : 2} />
               <span className="text-[10px] font-bold tracking-wider">LEADS</span>
+            </button>
+
+            <button
+              onClick={() => handleNav("pipeline")}
+              className={clsx(
+                "flex flex-col items-center gap-1 transition-all rounded-xl p-1",
+                isPipelineActive ? "text-[#D4AF37] scale-110" : "text-slate-400 opacity-60"
+              )}
+            >
+              <Kanban size={24} strokeWidth={isPipelineActive ? 2.5 : 2} />
+              <span className="text-[10px] font-bold tracking-wider">PIPELINE</span>
             </button>
 
             <button

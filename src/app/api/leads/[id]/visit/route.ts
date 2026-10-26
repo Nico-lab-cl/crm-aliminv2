@@ -1,19 +1,21 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import prisma from "@/lib/prisma";
+import { conAutor } from "@/lib/pipeline";
 
 export async function POST(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  const session = await getServerSession(authOptions as any);
+  const session = (await getServerSession(authOptions as any)) as any;
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
     const { visitProject, lote, etapa, visitDate } = await req.json();
-    
-    const updatedLead = await (prisma as any).lead.update({
+
+    // El historial de etapas anota la visita a nombre del asesor.
+    const autor = { usuarioId: session.user?.id, origen: "ASESOR", motivo: "Visita programada" };
+    const updatedLead = await conAutor(autor, (tx) => tx.lead.update({
       where: { id: params.id },
       data: {
         visited: true,
@@ -28,7 +30,7 @@ export async function POST(
         visitReminderSent1d: false, // Reset reminders for the new date
         visitReminderSent1h: false,
       } as any,
-    });
+    }));
 
     return NextResponse.json(updatedLead);
   } catch (error) {
