@@ -342,11 +342,20 @@ async function syncExternalBookingsInterno({ ultimosDias }: OpcionesSync) {
     const externalBookings = res.rows;
     console.log(`Found ${externalBookings.length} bookings in external database.`);
 
+    // El lead guarda una sola reserva (bookingId). Si un email tiene varias,
+    // sincronizar todas las hace pisarse en cada pasada y el asesor recibe un
+    // aviso nuevo cada vez; por eso solo cuenta la mas reciente.
+    const ultimaReservaPorEmail = new Map<string, string>();
+    for (const booking of externalBookings) {
+      if (booking.email) ultimaReservaPorEmail.set(booking.email.toLowerCase(), booking.id);
+    }
+
     let syncedCount = 0;
-    
+
     for (const booking of externalBookings) {
       if (!booking.email) continue;
       const emailLower = booking.email.toLowerCase();
+      if (ultimaReservaPorEmail.get(emailLower) !== booking.id) continue;
 
       try {
         // 2. Check if booking already synced
