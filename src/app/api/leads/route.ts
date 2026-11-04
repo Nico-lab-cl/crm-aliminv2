@@ -342,8 +342,14 @@ export async function POST(req: Request) {
     // cuenta si llega por un webhook (la web o Meta): un asesor que crea a mano
     // un correo que ya existe no es el cliente escribiendo de nuevo, y
     // suscribirse al Newsletter tampoco es pedir que lo llamen.
+    //
+    // Bajar un ebook tampoco (decisión de Nicolás, 04-11-2026): es un lead frío
+    // que recibe solo la secuencia de correo del CRM web. No va a la rueda, no
+    // avisa a nadie y no entra a la escalera de recordatorios. Si después
+    // cotiza, agenda o escribe, llega con otro origen y se reparte como siempre.
+    const esEbook = leadData.source === "Ebook";
     const reabrir =
-      !!existingLead && isExternalRequest && leadData.source !== "Newsletter" && !yaReabierto;
+      !!existingLead && isExternalRequest && leadData.source !== "Newsletter" && !esEbook && !yaReabierto;
 
     // Si el lead ya tenia asesor es un reingreso: se le avisa a ese asesor.
     //
@@ -369,6 +375,10 @@ export async function POST(req: Request) {
       if (leadData.source === "Newsletter") {
         // Los leads de Newsletter siempre van al admin Nicolas, nunca al round-robin
         assignedToId = NICOLAS_ID;
+      } else if (esEbook) {
+        assignedToId = null;
+        leadData.followupStage = 3;
+        leadData.lastActivity = `Descargó el ebook: ${leadData.interests || "sin nombre"}`;
       } else {
         // Restore Round Robin for all leads as requested
         const { getNextAdvisorId } = await import("@/lib/assignment");
