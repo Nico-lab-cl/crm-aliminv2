@@ -296,7 +296,8 @@ export function textoLeadSinAtender(lead: LeadAviso): string {
  * dos veces igual que con los avisos de un lead.
  */
 export type Evento =
-  | "LEAD_NUEVO" | "LEAD_REINGRESO" | "LEAD_SIN_ATENDER" | "RESUMEN_DIARIO" | "RESUMEN_SEMANAL" | "PRESUPUESTO_META";
+  | "LEAD_NUEVO" | "LEAD_REINGRESO" | "LEAD_SIN_ATENDER" | "RESUMEN_DIARIO" | "RESUMEN_SEMANAL" | "PRESUPUESTO_META"
+  | "LEADS_ESTANCADOS";
 
 /**
  * Reclama un aviso antes de mandarlo. Devuelve el id del registro si esta

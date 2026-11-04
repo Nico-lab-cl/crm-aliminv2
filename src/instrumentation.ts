@@ -111,6 +111,17 @@ export async function register() {
       } catch (error) {
         console.error("[cron] Fallo la pasada de avisos de lead score:", error);
       }
+      // Leads estancados en Contactado: push a cada asesor y resumen al grupo,
+      // una vez al dia a las 9:00 (ver leadsEstancados.ts).
+      try {
+        const { runLeadsEstancados } = await import("./lib/leadsEstancados");
+        const estancados = await runLeadsEstancados();
+        if (estancados.push || estancados.grupo) {
+          console.log(`[cron] Leads estancados: ${estancados.push} push, grupo ${estancados.grupo ? "sí" : "no"}.`);
+        }
+      } catch (error) {
+        console.error("[cron] Fallo la pasada de leads estancados:", error);
+      }
       // Analisis semanal del presupuesto de Meta, lunes 10:00, al grupo
       // "MKT | Alimin" (ver presupuestoMeta.ts). Apagado sin META_ADS_TOKEN.
       try {
