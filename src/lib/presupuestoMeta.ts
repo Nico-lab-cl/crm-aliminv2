@@ -1,5 +1,6 @@
 import prisma from "./prisma";
 import { avisar, leerConfig } from "./avisosWhatsappLeads";
+import { DIAS_EMBUDO, textoEmbudo } from "./embudoCanal";
 import {
   CUENTA_META_POR_DEFECTO,
   META_API,
@@ -492,7 +493,37 @@ export async function textoPresupuesto(desde: string, hasta: string, titulo: str
     pendientes.forEach((a, i) => l.push(`${i + 1}. ${a}`));
   }
 
+  // Embudo de 30 días por canal, con costo por visita y por reserva. Si falla,
+  // el análisis sale igual sin este bloque.
+  try {
+    const gasto30 = await gastoMetaPorTipo(sumarDias(hasta, -(DIAS_EMBUDO - 1)), hasta).catch((error) => {
+      console.error("[presupuesto-meta] Sin gasto de 30 días para el embudo:", error);
+      return null;
+    });
+    l.push("", await textoEmbudo(hasta, gasto30));
+  } catch (error) {
+    console.error("[presupuesto-meta] No se pudo armar el embudo por canal:", error);
+  }
+
   return l.join("\n");
+}
+
+/** Gasto de Meta en el período según el tipo de conjunto: formulario, web o WhatsApp. */
+async function gastoMetaPorTipo(desde: string, hasta: string) {
+  const token = process.env.META_ADS_TOKEN;
+  if (!token) throw new Error("Falta META_ADS_TOKEN");
+  const cuenta = process.env.META_AD_ACCOUNT_ID || CUENTA_META_POR_DEFECTO;
+  const t = encodeURIComponent(token);
+  const todos = encodeURIComponent(JSON.stringify([
+    "ACTIVE", "PAUSED", "ARCHIVED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "IN_PROCESS", "WITH_ISSUES",
+  ]));
+  const conjuntos = await leerTodo(
+    `${META_API}/act_${cuenta}/adsets?fields=id,optimization_goal&effective_status=${todos}&limit=200&access_token=${t}`
+  );
+  const objetivoDe = new Map<string, string>(conjuntos.map((c) => [c.id, c.optimization_goal]));
+  const filas = await insightsPorAnuncio(cuenta, t, desde, hasta, objetivoDe);
+  const suma = (tipo: TipoResultado) => filas.filter((f) => f.tipo === tipo).reduce((s, f) => s + f.gasto, 0);
+  return { formulario: suma("FORMULARIO"), web: suma("LEAD_WEB"), whatsapp: suma("CONVERSACION") };
 }
 
 // ---------------------------------------------------------------------------
