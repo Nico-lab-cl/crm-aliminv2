@@ -247,6 +247,9 @@ async function graph(path: string, body: unknown, base = GRAPH, token = process.
 async function esCuentaDePrueba(conversationId: string) {
   const lista = (process.env.RESPUESTA_AUTO_PRUEBA || "").split(",").map((s) => s.trim()).filter(Boolean);
   if (!lista.length) return false;
+  // Vale el PSID o el comienzo del id de la conversación (el que se ve en la
+  // URL del CRM, /inbox/<id>), que es más fácil de encontrar.
+  if (lista.some((x) => conversationId.startsWith(x.toLowerCase()))) return true;
   const c = await (prisma as any).conversation.findUnique({ where: { id: conversationId }, select: { psid: true } });
   return Boolean(c && lista.includes(c.psid));
 }
