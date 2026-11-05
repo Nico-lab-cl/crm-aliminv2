@@ -17,7 +17,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
   }
 
-  const conv = await (prisma as any).conversation.findUnique({ where: { id: conversationId }, select: { id: true } });
+  // El enlace corto solo lleva los 8 primeros caracteres del id.
+  const conv = /^[0-9a-f]{8}$/i.test(conversationId)
+    ? await (prisma as any).conversation.findFirst({
+        where: { id: { startsWith: conversationId.toLowerCase() } },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      })
+    : await (prisma as any).conversation.findUnique({ where: { id: conversationId }, select: { id: true } });
   if (!conv) return NextResponse.json({ ok: false }, { status: 404 });
 
   const nueva = await registrarBrochureAbierto(conv.id, brochure);

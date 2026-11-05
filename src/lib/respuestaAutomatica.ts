@@ -138,15 +138,28 @@ const PUBLICAS = [
   "¡Hola! Te enviamos los detalles por interno 😊",
 ];
 
+/* Enlace corto: aliminspa.cl/b/<destino><red><vía><categoría><8 primeros del id>,
+ * p. ej. aliminspa.cl/b/liclf8f75795. El sitio (src/app/b/[codigo]) lo expande
+ * a la página con los utm completos y r=<id>, así que la medición no cambia y
+ * el mensaje no lleva una URL de tres líneas. */
+const DESTINO: Record<string, string> = {
+  "/brochure/lomas-del-mar": "l",
+  "/brochure/arena-y-sol": "a",
+  "/agendar-visita": "v",
+};
+const CATEGORIA_CORTA: Record<Categoria, string> = {
+  lomas: "l", arena: "a", general: "g", visita: "v", otro: "o", ignorar: "x",
+};
+
 function enlace(ruta: string, plataforma: string, via: Via, categoria: Categoria, conversationId: string) {
-  const u = new URL(ruta, SITIO);
-  u.searchParams.set("utm_source", plataforma);
-  u.searchParams.set("utm_medium", "social-auto");
-  u.searchParams.set("utm_campaign", "respuesta-automatica");
-  u.searchParams.set("utm_content", via);
-  u.searchParams.set("utm_term", categoria);
-  u.searchParams.set("r", conversationId);
-  return u.toString();
+  const codigo =
+    DESTINO[ruta] +
+    (plataforma === "instagram" ? "i" : "f") +
+    (via === "comentario" ? "c" : "d") +
+    CATEGORIA_CORTA[categoria] +
+    conversationId.replace(/-/g, "").slice(0, 8);
+  // Con https: Instagram no siempre convierte en enlace un dominio pelado.
+  return `${SITIO}/b/${codigo}`;
 }
 
 function saludo(nombre?: string | null) {
