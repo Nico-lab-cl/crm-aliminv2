@@ -212,9 +212,8 @@ const NOMBRE_CATEGORIA: Record<Categoria, string> = {
 
 /* ── Envío por Graph API ───────────────────────────────────────────── */
 
-async function graph(path: string, body: unknown) {
-  const token = process.env.META_PAGE_ACCESS_TOKEN as string;
-  const r = await fetch(`${GRAPH}${path}?access_token=${encodeURIComponent(token)}`, {
+async function graph(path: string, body: unknown, base = GRAPH, token = process.env.META_PAGE_ACCESS_TOKEN as string) {
+  const r = await fetch(`${base}${path}?access_token=${encodeURIComponent(token)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -323,8 +322,16 @@ export async function responderAutomatico(e: Entrada) {
 
       // 2. Respuesta pública bajo el comentario.
       try {
-        const ruta = e.plataforma === "instagram" ? `/${e.commentId}/replies` : `/${e.commentId}/comments`;
-        const pub = await graph(ruta, { message: p.publica });
+        // En Instagram el token de la página no trae el permiso de comentarios
+        // (#100 Missing Permission); el token de inicio de sesión de Instagram
+        // (IGAA…, instagram_business_manage_comments) sí responde en público.
+        const igToken = process.env.META_INSTAGRAM_ACCESS_TOKEN;
+        const pub =
+          e.plataforma === "instagram"
+            ? igToken
+              ? await graph(`/${e.commentId}/replies`, { message: p.publica }, "https://graph.instagram.com/v21.0", igToken)
+              : await graph(`/${e.commentId}/replies`, { message: p.publica })
+            : await graph(`/${e.commentId}/comments`, { message: p.publica });
         recordar(pub.id);
         await guardar(conversationId, `(Respuesta pública al comentario) ${p.publica}`, pub.id);
       } catch (error) {
