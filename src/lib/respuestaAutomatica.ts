@@ -274,9 +274,24 @@ export interface Entrada {
  * conversación sigue en la bandeja como siempre.
  */
 export async function responderAutomatico(e: Entrada) {
-  if (!respuestaAutoActiva() || !e.texto.trim()) return;
+  // Cada salida deja su línea: sin ellas no se sabe por qué no respondió.
+  if (!respuestaAutoActiva()) {
+    console.log(
+      `[auto] Apagada: META_PAGE_ACCESS_TOKEN ${process.env.META_PAGE_ACCESS_TOKEN ? "ok" : "FALTA"}, ` +
+        `RESPUESTA_AUTO_ACTIVA=${JSON.stringify(process.env.RESPUESTA_AUTO_ACTIVA ?? null)}`,
+    );
+    return;
+  }
+  if (!e.texto.trim()) {
+    console.log(`[auto] ${e.plataforma}/${e.via}: sin texto, no respondo.`);
+    return;
+  }
+  console.log(`[auto] Recibido ${e.plataforma}/${e.via} en ${e.conversationId}`);
   try {
-    if (await yaAtendida(e.conversationId)) return;
+    if (await yaAtendida(e.conversationId)) {
+      console.log(`[auto] ${e.conversationId}: ya tuvo respuesta de asesor o automática en ${DIAS_ENTRE_RESPUESTAS} días, no respondo.`);
+      return;
+    }
 
     const categoria = await clasificar(e.texto, e.publicacion);
     console.log(`[auto] ${e.plataforma}/${e.via} → ${categoria}: ${e.texto.slice(0, 80)}`);
