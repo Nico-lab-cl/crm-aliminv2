@@ -6,6 +6,27 @@ import { loEnvioLaRespuestaAuto, responderAutomatico, type Entrada } from "@/lib
 // Configuración de Meta Webhook (Configura estas en tu .env)
 const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
 
+/* ── Avisos repetidos en paralelo ─────────────────────────────────────
+ * Los comentarios de Instagram llegan por dos suscripciones a la vez (la de
+ * inicio de sesión con Facebook y la de inicio de sesión de Instagram), con
+ * milisegundos de diferencia. yaGuardado() consulta la base y los dos avisos
+ * la consultan antes de que alguno guarde, así que los dos respondían y el
+ * cliente recibía el mensaje automático dos veces. Reclamar el id en memoria,
+ * sin await de por medio, deja pasar solo al primero. */
+const reclamados = new Map<string, number>();
+const RECLAMO_MS = 10 * 60 * 1000;
+function reclamar(id?: string | null) {
+  if (!id) return true;
+  const ahora = Date.now();
+  if (reclamados.size > 5000) {
+    for (const [k, t] of reclamados) if (ahora - t > RECLAMO_MS) reclamados.delete(k);
+  }
+  const previo = reclamados.get(id);
+  if (previo && ahora - previo < RECLAMO_MS) return false;
+  reclamados.set(id, ahora);
+  return true;
+}
+
 /**
  * GET: Verificación del Webhook por parte de Meta
  */
@@ -53,7 +74,7 @@ export async function POST(req: Request) {
               const mid = webhookEvent.message.mid;
               // Ecos de lo que mandó la respuesta automática: ya están guardados.
               if (isEcho && loEnvioLaRespuestaAuto(mid)) continue;
-              if (await yaGuardado(mid)) continue;
+              if (!reclamar(mid) || (await yaGuardado(mid))) continue;
               console.log(`[DIRECT] Full PSID from ${platform}: ${psid}, type: ${senderType}`);
               const r = await handleIncomingMessage(psid, webhookEvent.message.text, platform, "DIRECT", mid, undefined, undefined, undefined, senderType as "meta" | "advisor");
               if (!isEcho && r.nueva) {
@@ -80,7 +101,7 @@ export async function POST(req: Request) {
               if (!psid) continue;
 
               const isPageReply = psid === entry.id;
-              if (loEnvioLaRespuestaAuto(commentId) || (await yaGuardado(commentId))) continue;
+              if (loEnvioLaRespuestaAuto(commentId) || !reclamar(commentId) || (await yaGuardado(commentId))) continue;
               const postContent = await fetchPostContent(postId, "facebook");
 
               if (isPageReply) {
@@ -110,7 +131,7 @@ export async function POST(req: Request) {
               if (!psid) continue;
 
               const isPageReply = psid === entry.id;
-              if (loEnvioLaRespuestaAuto(commentId) || (await yaGuardado(commentId))) continue;
+              if (loEnvioLaRespuestaAuto(commentId) || !reclamar(commentId) || (await yaGuardado(commentId))) continue;
               const postContent = await fetchPostContent(mediaId, "instagram");
 
               if (isPageReply) {
