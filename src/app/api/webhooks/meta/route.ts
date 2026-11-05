@@ -19,7 +19,9 @@ function reclamar(id?: string | null) {
   if (!id) return true;
   const ahora = Date.now();
   if (reclamados.size > 5000) {
-    for (const [k, t] of reclamados) if (ahora - t > RECLAMO_MS) reclamados.delete(k);
+    reclamados.forEach((t, k) => {
+      if (ahora - t > RECLAMO_MS) reclamados.delete(k);
+    });
   }
   const previo = reclamados.get(id);
   if (previo && ahora - previo < RECLAMO_MS) return false;
