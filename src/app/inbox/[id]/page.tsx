@@ -316,6 +316,23 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
           const esAli = msg.senderType === "ali";
           const isMe = msg.senderType === "advisor" || esAli;
 
+          // Notas internas de la respuesta automática de IG/FB ("Abrió el
+          // brochure..."): no se le mandaron al cliente, van al centro.
+          if (msg.sourceType === "EVENTO") {
+            return (
+              <div key={msg.id || i} className="flex justify-center">
+                <div className="px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-[11px] text-slate-600">
+                  {msg.text}
+                  {msg.createdAt && (
+                    <span className="ml-2 text-slate-400">
+                      {format(new Date(msg.createdAt), "dd/MM HH:mm", { locale: es })}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
           let formattedTime = "";
           try {
             if (msg.createdAt) {
@@ -343,7 +360,11 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
               `}>
                 {esAli && (
                   <div className="text-[10px] font-black uppercase text-violet-600 mb-1">
-                    {msg.sourceType === "HANDOFF" ? "Ali (IA) · pidió un asesor" : "Ali (IA)"}
+                    {msg.sourceType === "HANDOFF"
+                      ? "Ali (IA) · pidió un asesor"
+                      : msg.sourceType === "AUTO"
+                      ? "Respuesta automática"
+                      : "Ali (IA)"}
                   </div>
                 )}
                 {msg.sourceType === "COMMENT" && !isMe && (
@@ -444,7 +465,7 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
         })}
       </div>
 
-      {messages.some((m) => m?.senderType === "ali") &&
+      {messages.some((m) => m?.senderType === "ali" && m.sourceType !== "AUTO" && m.sourceType !== "EVENTO") &&
         !messages.some((m) => m?.senderType === "advisor") && (
           <div className="mx-4 mb-2 px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-[12px] text-violet-700">
             Ali (IA) está atendiendo este chat. Si respondes, Ali se desactiva y la conversación queda contigo.

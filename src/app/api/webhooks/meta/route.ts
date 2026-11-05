@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import crypto from "node:crypto";
 import prisma from "@/lib/prisma";
+import { loEnvioLaRespuestaAuto, responderAutomatico, type Entrada } from "@/lib/respuestaAutomatica";
 
 // Configuración de Meta Webhook (Configura estas en tu .env)
 const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
@@ -26,7 +28,15 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    // Cuerpo crudo: la firma de Meta se calcula sobre los bytes exactos.
+    const crudo = await req.text();
+    if (!firmaValida(crudo, req.headers.get("x-hub-signature-256"))) {
+      return new Response("Firma inválida", { status: 401 });
+    }
+    const body = JSON.parse(crudo);
+    // Respuestas automáticas a disparar cuando todo quede guardado. Corren
+    // después de devolver el 200, para que Meta no reintente por demora.
+    const pendientes: Entrada[] = [];
 
     if (body.object === "page" || body.object === "instagram") {
       for (const entry of body.entry) {
@@ -40,8 +50,16 @@ export async function POST(req: Request) {
             const platform = body.object === "instagram" ? "instagram" : "facebook";
             
             if (webhookEvent.message && webhookEvent.message.text) {
+              const mid = webhookEvent.message.mid;
+              // Ecos de lo que mandó la respuesta automática: ya están guardados.
+              if (isEcho && loEnvioLaRespuestaAuto(mid)) continue;
+              if (await yaGuardado(mid)) continue;
               console.log(`[DIRECT] Full PSID from ${platform}: ${psid}, type: ${senderType}`);
-              await handleIncomingMessage(psid, webhookEvent.message.text, platform, "DIRECT", webhookEvent.message.mid, undefined, undefined, undefined, senderType as "meta" | "advisor");
+              const r = await handleIncomingMessage(psid, webhookEvent.message.text, platform, "DIRECT", mid, undefined, undefined, undefined, senderType as "meta" | "advisor");
+              if (!isEcho && r.nueva) {
+                // Solo el primer DM de una conversación nueva.
+                pendientes.push({ conversationId: r.conversationId, plataforma: platform, via: "dm", texto: webhookEvent.message.text, nombre: r.nombre });
+              }
             }
           }
         }
@@ -62,6 +80,7 @@ export async function POST(req: Request) {
               if (!psid) continue;
 
               const isPageReply = psid === entry.id;
+              if (loEnvioLaRespuestaAuto(commentId) || (await yaGuardado(commentId))) continue;
               const postContent = await fetchPostContent(postId, "facebook");
 
               if (isPageReply) {
@@ -73,7 +92,8 @@ export async function POST(req: Request) {
                 }
               } else {
                 console.log(`[COMMENT] FB Post ID: ${postId}, Full PSID: ${psid}, Provided Name: ${providedName}`);
-                await handleIncomingMessage(psid, text, platform, "COMMENT", commentId, postId, postContent, providedName, "meta");
+                const r = await handleIncomingMessage(psid, text, platform, "COMMENT", commentId, postId, postContent, providedName, "meta");
+                pendientes.push({ conversationId: r.conversationId, plataforma: "facebook", via: "comentario", texto: text, nombre: r.nombre, publicacion: textoDe(postContent), commentId });
               }
             }
             
@@ -90,6 +110,7 @@ export async function POST(req: Request) {
               if (!psid) continue;
 
               const isPageReply = psid === entry.id;
+              if (loEnvioLaRespuestaAuto(commentId) || (await yaGuardado(commentId))) continue;
               const postContent = await fetchPostContent(mediaId, "instagram");
 
               if (isPageReply) {
@@ -101,11 +122,18 @@ export async function POST(req: Request) {
                 }
               } else {
                 console.log(`[COMMENT] IG Media ID: ${mediaId}, Full PSID: ${psid}, Provided Name: ${providedName}`);
-                await handleIncomingMessage(psid, text, platform, "COMMENT", commentId, mediaId, postContent, providedName, "meta");
+                const r = await handleIncomingMessage(psid, text, platform, "COMMENT", commentId, mediaId, postContent, providedName, "meta");
+                pendientes.push({ conversationId: r.conversationId, plataforma: "instagram", via: "comentario", texto: text, nombre: null, publicacion: textoDe(postContent), commentId });
               }
             }
           }
         }
+      }
+      if (pendientes.length) {
+        // Uno tras otro: dos avisos de la misma persona no deben cruzarse.
+        setImmediate(async () => {
+          for (const p of pendientes) await responderAutomatico(p);
+        });
       }
       return new Response("EVENT_RECEIVED", { status: 200 });
     }
@@ -170,6 +198,8 @@ async function handleIncomingMessage(
   overrideConversationId?: string
 ) {
   let conversationId = overrideConversationId;
+  let nueva = false;
+  let nombre: string | null = null;
 
   // 1. Buscar o crear la conversación por PSID
   if (!conversationId) {
@@ -191,6 +221,7 @@ async function handleIncomingMessage(
         }
       }
 
+      nueva = true;
       conversation = await (prisma as any).conversation.create({
         data: {
           psid,
@@ -221,6 +252,7 @@ async function handleIncomingMessage(
       }
     }
     conversationId = conversation.id;
+    nombre = conversation.metaName || null;
   }
 
   // 2. Guardar el mensaje/comentario
@@ -243,4 +275,36 @@ async function handleIncomingMessage(
   });
 
   console.log(`[${sourceType}] Guardado Mje (Type: ${senderType}): ${text}`);
+  return { conversationId: conversationId as string, nueva, nombre };
+}
+
+/**
+ * X-Hub-Signature-256 = HMAC-SHA256 del cuerpo con la clave secreta de la app.
+ * Sin META_APP_SECRET no se exige (así funcionaba hasta noviembre 2026); con
+ * ella, un POST que no viene de Meta se rechaza.
+ */
+function firmaValida(crudo: string, firma: string | null) {
+  const secreto = process.env.META_APP_SECRET;
+  if (!secreto) return true;
+  if (!firma) return false;
+  const esperada = "sha256=" + crypto.createHmac("sha256", secreto).update(crudo, "utf8").digest("hex");
+  const a = Buffer.from(firma);
+  const b = Buffer.from(esperada);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/** Meta reintenta y a veces manda el mismo aviso dos veces. */
+async function yaGuardado(sourceId?: string | null) {
+  if (!sourceId) return false;
+  const m = await (prisma as any).message.findFirst({ where: { sourceId }, select: { id: true } });
+  return Boolean(m);
+}
+
+function textoDe(postContent?: string | null) {
+  if (!postContent) return null;
+  try {
+    return JSON.parse(postContent).text || null;
+  } catch {
+    return null;
+  }
 }

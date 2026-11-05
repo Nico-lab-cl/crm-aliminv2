@@ -56,8 +56,12 @@ export async function POST(req: Request) {
       });
     }
 
+    let metaId: string | null = null;
     if (!esChatWeb) {
       const metaData = await metaResponse?.json();
+      // Con el id de Meta guardado, el eco que devuelve el webhook se reconoce
+      // como repetido y no aparece dos veces en la bandeja.
+      metaId = metaData?.message_id || metaData?.id || null;
       if (!metaResponse?.ok) {
         console.error("Error de Meta API:", metaData);
         return NextResponse.json({ error: "Failed to send message via Meta", details: metaData }, { status: 500 });
@@ -78,6 +82,7 @@ export async function POST(req: Request) {
         senderId: (session.user as any).id,
         senderType: "advisor",
         sourceType,
+        sourceId: metaId,
       }
     });
 
