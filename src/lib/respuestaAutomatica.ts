@@ -181,7 +181,7 @@ export function plantilla(
 ): Plantilla | null {
   const l = (ruta: string) => enlace(ruta, ctx.plataforma, ctx.via, categoria, ctx.conversationId);
   const hola = saludo(ctx.nombre);
-  const cierre = "En un ratito te escribe un asesor por aquí para resolver tus dudas. ¿Desde qué comuna nos escribes?";
+  const cierre = "Un asesor comercial seguirá la conversación en este chat.";
   const publica = PUBLICAS[Math.floor(Math.random() * PUBLICAS.length)];
 
   switch (categoria) {
@@ -205,7 +205,7 @@ export function plantilla(
       };
     case "visita":
       return {
-        texto: `${hola} ¡Claro que puedes venir a conocer los terrenos! Las visitas son presenciales y las puedes agendar acá:\n${l("/agendar-visita")}\n\nSi quieres ver la info antes, te dejo los brochures:\nLomas del Mar: ${l("/brochure/lomas-del-mar")}\nArena y Sol: ${l("/brochure/arena-y-sol")}\n\nUn asesor te escribe por aquí para coordinar.`,
+        texto: `${hola} ¡Claro que puedes venir a conocer los terrenos! Las visitas son presenciales y las puedes agendar acá:\n${l("/agendar-visita")}\n\nSi quieres ver la info antes, te dejo los brochures:\nLomas del Mar: ${l("/brochure/lomas-del-mar")}\nArena y Sol: ${l("/brochure/arena-y-sol")}\n\n${cierre}`,
         imagen: null,
         publica,
       };
@@ -343,22 +343,34 @@ export async function responderAutomatico(e: Entrada) {
       conversationId = await unirConChat(e.conversationId, privado.recipient_id);
       await guardar(conversationId, p.texto, privado.message_id);
 
-      // 2. Respuesta pública bajo el comentario.
-      try {
-        // En Instagram el token de la página no trae el permiso de comentarios
-        // (#100 Missing Permission); el token de inicio de sesión de Instagram
-        // (IGAA…, instagram_business_manage_comments) sí responde en público.
-        const igToken = process.env.META_INSTAGRAM_ACCESS_TOKEN;
-        const pub =
-          e.plataforma === "instagram"
-            ? igToken
-              ? await graph(`/${e.commentId}/replies`, { message: p.publica }, "https://graph.instagram.com/v21.0", igToken)
-              : await graph(`/${e.commentId}/replies`, { message: p.publica })
-            : await graph(`/${e.commentId}/comments`, { message: p.publica });
-        recordar(pub.id);
-        await guardar(conversationId, `(Respuesta pública al comentario) ${p.publica}`, pub.id);
-      } catch (error) {
-        console.error("[auto] No se pudo responder en público:", error);
+      // 2. Respuesta pública bajo el comentario. En Instagram se prueba primero
+      //    el token de inicio de sesión de Instagram (IGAA…) y después el de la
+      //    página; si ninguno puede, el error de Meta queda como nota en la
+      //    conversación para verlo sin abrir los logs.
+      const intentos: Array<() => Promise<any>> =
+        e.plataforma === "instagram"
+          ? [
+              ...(process.env.META_INSTAGRAM_ACCESS_TOKEN
+                ? [() => graph(`/${e.commentId}/replies`, { message: p.publica }, "https://graph.instagram.com/v21.0", process.env.META_INSTAGRAM_ACCESS_TOKEN as string)]
+                : []),
+              () => graph(`/${e.commentId}/replies`, { message: p.publica }),
+            ]
+          : [() => graph(`/${e.commentId}/comments`, { message: p.publica })];
+      const errores: string[] = [];
+      for (const intento of intentos) {
+        try {
+          const pub = await intento();
+          recordar(pub.id);
+          await guardar(conversationId, `(Respuesta pública al comentario) ${p.publica}`, pub.id);
+          errores.length = 0;
+          break;
+        } catch (error) {
+          errores.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+      if (errores.length) {
+        console.error("[auto] No se pudo responder en público:", errores.join(" | "));
+        await anotar(conversationId, `No se pudo responder en público el comentario: ${errores.join(" | ")}`.slice(0, 500));
       }
     } else {
       // DM: la ventana de 24 h está abierta porque la persona acaba de escribir.
