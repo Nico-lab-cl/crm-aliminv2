@@ -242,7 +242,17 @@ async function graph(path: string, body: unknown, base = GRAPH, token = process.
 /* ── Orquestación ──────────────────────────────────────────────────── */
 
 /** ¿Ya se le respondió hace poco o ya lo atiende un asesor? */
+/** PSID de cuentas de prueba (RESPUESTA_AUTO_PRUEBA, separados por coma):
+ * se les responde siempre, sin el límite de una respuesta cada 7 días. */
+async function esCuentaDePrueba(conversationId: string) {
+  const lista = (process.env.RESPUESTA_AUTO_PRUEBA || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!lista.length) return false;
+  const c = await (prisma as any).conversation.findUnique({ where: { id: conversationId }, select: { psid: true } });
+  return Boolean(c && lista.includes(c.psid));
+}
+
 async function yaAtendida(conversationId: string) {
+  if (await esCuentaDePrueba(conversationId)) return false;
   const desde = new Date(Date.now() - DIAS_ENTRE_RESPUESTAS * 24 * 60 * 60 * 1000);
   const previo = await (prisma as any).message.findFirst({
     where: {
