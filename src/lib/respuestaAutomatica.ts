@@ -133,9 +133,9 @@ export async function clasificar(texto: string, publicacion?: string | null): Pr
 /* ── Plantillas ────────────────────────────────────────────────────── */
 
 const PUBLICAS = [
-  "¡Hola! Te escribimos por interno 📩",
-  "¡Gracias por comentar! Te mandamos la info por mensaje privado 📩",
-  "¡Hola! Te enviamos los detalles por interno 😊",
+  "¡Hola! Te mandamos la info por mensaje privado 📩",
+  "¡Gracias por comentar! Revisa tus mensajes, ahí te dejamos todo 😊",
+  "¡Hola! Te escribimos por interno con toda la información 📩",
 ];
 
 /* Enlace corto: aliminspa.cl/b/<destino><red><vía><categoría><8 primeros del id>,
@@ -181,31 +181,31 @@ export function plantilla(
 ): Plantilla | null {
   const l = (ruta: string) => enlace(ruta, ctx.plataforma, ctx.via, categoria, ctx.conversationId);
   const hola = saludo(ctx.nombre);
-  const cierre = "Un asesor comercial seguirá la conversación en este chat.";
+  const cierre = "¿Tienes alguna duda? Escríbenos por aquí mismo y un asesor te responde 😊";
   const publica = PUBLICAS[Math.floor(Math.random() * PUBLICAS.length)];
 
   switch (categoria) {
     case "lomas":
       return {
-        texto: `${hola} Gracias por tu interés en Lomas del Mar, nuestros terrenos urbanizados de 200 y 390 m² en El Tabo.\n\nAcá puedes ver el brochure completo:\n${l("/brochure/lomas-del-mar")}\n\n${cierre}`,
+        texto: `${hola} Qué bueno que te interesó Lomas del Mar 🌲\nSon terrenos de 200 y 390 m² en El Tabo, cerca de la playa.\n\nPincha aquí para ver toda la información 👇\n${l("/brochure/lomas-del-mar")}\n\n${cierre}`,
         imagen: `${SITIO}/brochures/lomas-del-mar/portada.jpg`,
         publica,
       };
     case "arena":
       return {
-        texto: `${hola} Gracias por tu interés en Arena y Sol, nuestros terrenos urbanizados de 200 m² en El Tabo.\n\nAcá puedes ver el brochure completo:\n${l("/brochure/arena-y-sol")}\n\n${cierre}`,
+        texto: `${hola} Qué bueno que te interesó Arena y Sol ☀️\nSon terrenos de 200 m² en El Tabo, cerca de la playa.\n\nPincha aquí para ver toda la información 👇\n${l("/brochure/arena-y-sol")}\n\n${cierre}`,
         imagen: `${SITIO}/brochures/arena-y-sol/portada.jpg`,
         publica,
       };
     case "general":
       return {
-        texto: `${hola} Gracias por escribirnos. Tenemos terrenos urbanizados en El Tabo en dos proyectos; te dejo los brochures:\n\n🌲 Lomas del Mar (200 y 390 m²):\n${l("/brochure/lomas-del-mar")}\n\n☀️ Arena y Sol (200 m²):\n${l("/brochure/arena-y-sol")}\n\n${cierre}`,
+        texto: `${hola} Gracias por escribirnos.\nTenemos terrenos en El Tabo, cerca de la playa, en dos proyectos:\n\n🌲 Lomas del Mar (200 y 390 m²)\nPincha aquí para ver toda la información 👇\n${l("/brochure/lomas-del-mar")}\n\n☀️ Arena y Sol (200 m²)\nPincha aquí para ver toda la información 👇\n${l("/brochure/arena-y-sol")}\n\n${cierre}`,
         imagen: null,
         publica,
       };
     case "visita":
       return {
-        texto: `${hola} ¡Claro que puedes venir a conocer los terrenos! Las visitas son presenciales y las puedes agendar acá:\n${l("/agendar-visita")}\n\nSi quieres ver la info antes, te dejo los brochures:\nLomas del Mar: ${l("/brochure/lomas-del-mar")}\nArena y Sol: ${l("/brochure/arena-y-sol")}\n\n${cierre}`,
+        texto: `${hola} ¡Claro que puedes venir a conocer los terrenos!\n\n📅 Pincha aquí para elegir el día de tu visita 👇\n${l("/agendar-visita")}\n\nSi quieres ver la información antes:\n🌲 Lomas del Mar 👉 ${l("/brochure/lomas-del-mar")}\n☀️ Arena y Sol 👉 ${l("/brochure/arena-y-sol")}\n\nUn asesor te escribe por aquí para coordinar 😊`,
         imagen: null,
         publica,
       };
