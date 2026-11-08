@@ -8,7 +8,7 @@ import {
   ChevronRight, Phone, MessageSquare, Clock,
   MoreVertical, Share2, Mail, ChevronLeft, ChevronDown,
   LayoutGrid, Globe, Megaphone, Calendar, MapPin,
-  Meh, Smile, Laugh, UserMinus, PenTool, TrendingUp, X, UserCircle
+  Meh, Smile, Laugh, UserMinus, PenTool, TrendingUp, X, UserCircle, GraduationCap
 } from "lucide-react";
 import clsx from "clsx";
 import Image from "next/image";
@@ -433,6 +433,15 @@ function DashboardContent() {
           
           {/* Project Dropdown Selector - only for leads view */}
           {!isVisitsActive && !isSigningsActive && (
+          <div className="flex flex-col items-end gap-2">
+          {/* Academia: cápsulas de video sobre cómo usar el CRM móvil. */}
+          <button
+            onClick={() => router.push("/academia")}
+            className="flex items-center gap-2 bg-amber-50 border border-amber-200 px-4 py-2 rounded-xl text-xs font-black text-amber-700 hover:bg-amber-100 transition-all active:scale-95 shadow-sm"
+          >
+            <GraduationCap size={14} strokeWidth={3} />
+            ACADEMIA
+          </button>
           <div className="flex items-center gap-2">
             {(session as any)?.user?.role === "ADMIN" && (
               <button 
@@ -473,6 +482,7 @@ function DashboardContent() {
                 </div>
               )}
             </div>
+          </div>
           </div>
           )}
         </div>
