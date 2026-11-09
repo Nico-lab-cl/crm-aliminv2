@@ -5,6 +5,11 @@
 public/videos/ads/v1_horizontal.mp4 -filter -diff -merge
 public/videos/ads/v2_horizontal.mp4 -filter -diff -merge
 
+# Las capsulas de la Academia van dentro de la imagen de Docker. EasyPanel clona
+# sin git-lfs, asi que en LFS llegarian como un puntero de 132 bytes y el video
+# no se reproduce.
+academia/*.mp4 -filter -diff -merge -text
+
 # Las migraciones son texto para leer y copiar, no binarios. En LFS quedan como
 # un puntero ilegible en GitHub y quien clone sin git-lfs recibe un archivo
 # inservible justo cuando necesita correrlo contra produccion.
