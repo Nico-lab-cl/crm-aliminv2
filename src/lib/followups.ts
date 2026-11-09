@@ -179,6 +179,38 @@ export async function runLeadFollowups() {
  * Es deliberadamente silencioso ante errores. Que falle la marca de contacto
  * nunca debe impedir que se envie un mensaje al cliente.
  */
+/**
+ * El que contacta a un lead sin dueño se lo queda.
+ *
+ * Es la misma regla que "el primero que responde se queda el lead" de la
+ * bandeja (asignarAlQueResponde en lib/ali.ts), pero para el contacto que se
+ * hace fuera de la bandeja: los botones de WhatsApp, llamada y correo de la
+ * ficha, y el interruptor de contactado. Los leads del chat web llegan sin
+ * asesor a proposito; el aviso les llega a todos, y el asesor que lo abre y le
+ * escribe por su WhatsApp lo dejaba contactado a su nombre pero sin dueño. Asi
+ * nunca entraba a su "Mis Leads" ni salia en el grupo de WhatsApp (caso de
+ * Marcela, 8/11/2026: Richard Gajardo, Valentin y Simon).
+ *
+ * Solo toma leads sin dueño: nunca le quita un lead a otro asesor. El
+ * updateMany con assignedToId null hace que, si dos lo contactan a la vez, se
+ * lo quede uno solo. Devuelve true si el lead quedo para este usuario.
+ */
+export async function quedarseConLeadSinDueno(leadId: string, usuarioId: string | null | undefined) {
+  if (!usuarioId) return false;
+  try {
+    const { count } = await (prisma as any).lead.updateMany({
+      where: { id: leadId, assignedToId: null },
+      data: { assignedToId: usuarioId },
+    });
+    return count > 0;
+  } catch (error) {
+    // Igual que marcarContactado: que falle la asignacion no puede impedir
+    // que quede registrado el contacto.
+    console.error("[followups] No se pudo asignar el lead al que lo contacto:", error);
+    return false;
+  }
+}
+
 export async function marcarContactado(leadId: string | null | undefined, advisorId?: string | null) {
   if (!leadId) return;
 

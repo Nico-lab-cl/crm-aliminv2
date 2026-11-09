@@ -235,7 +235,12 @@ function TarjetaLead({ lead, onAbrir }: { lead: LeadActividad; onAbrir: () => vo
     fetch(`/api/leads/${lead.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, lastActivity: `${tipo === "WHATSAPP" ? "WhatsApp" : "Llamada"} el ${cuando}` }),
+      // contactoDesdeFicha: si el lead no tiene dueño, quien lo contacta se lo queda.
+      body: JSON.stringify({
+        status,
+        lastActivity: `${tipo === "WHATSAPP" ? "WhatsApp" : "Llamada"} el ${cuando}`,
+        contactoDesdeFicha: true,
+      }),
     }).catch((err) => console.error("No se pudo registrar el contacto", err));
   };
 

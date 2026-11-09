@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { conAutor } from "@/lib/pipeline";
+import { quedarseConLeadSinDueno } from "@/lib/followups";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       nuevaEtapa = "CONTACTADO";
     } else if (!contactado && etapa === "CONTACTADO") {
       nuevaEtapa = "NUEVO";
+    }
+
+    // Marcar como atendido un lead sin dueño es tomarlo (ver followups.ts).
+    if (contactado) {
+      await quedarseConLeadSinDueno(params.id, advisorId);
     }
 
     const actualizado = await conAutor({ usuarioId: advisorId, origen: "ASESOR" }, (tx) => tx.lead.update({

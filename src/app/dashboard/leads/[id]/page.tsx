@@ -300,7 +300,9 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           status: newStatus,
-          lastActivity: activity 
+          lastActivity: activity,
+          // Si el lead no tiene dueño, quien lo contacta se lo queda.
+          contactoDesdeFicha: true,
         }),
       });
     } catch (error) {

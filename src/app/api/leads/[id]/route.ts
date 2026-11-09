@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { conAutor } from "@/lib/pipeline";
 import { createNotification } from "@/lib/notifications";
+import { quedarseConLeadSinDueno } from "@/lib/followups";
 
 export async function GET(
   req: Request,
@@ -35,7 +36,15 @@ export async function PATCH(
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const data = await req.json();
+    const { contactoDesdeFicha, ...data } = await req.json();
+
+    // Los botones de WhatsApp, llamada y correo de la ficha y de Actividad
+    // mandan contactoDesdeFicha: contactar un lead sin dueño es tomarlo, igual
+    // que responderle desde la bandeja (ver quedarseConLeadSinDueno). La marca
+    // no es una columna, por eso se saca de data antes de escribir.
+    if (contactoDesdeFicha === true) {
+      await quedarseConLeadSinDueno(params.id, (session as any).user?.id);
+    }
 
     const actualizar = (db: any) =>
       db.lead.update({
