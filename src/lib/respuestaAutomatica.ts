@@ -1,4 +1,5 @@
 import prisma from "./prisma";
+import { reportarUsoIA } from "./usoIA";
 
 /**
  * Respuesta automática de Instagram y Facebook.
@@ -97,7 +98,11 @@ export function clasificarPorPalabras(texto: string, publicacion?: string | null
   return "ignorar";
 }
 
-export async function clasificar(texto: string, publicacion?: string | null): Promise<Categoria> {
+export async function clasificar(
+  texto: string,
+  publicacion?: string | null,
+  ctx?: { canal: string; conversationId: string }
+): Promise<Categoria> {
   const clave = process.env.ANTHROPIC_API_KEY;
   if (!clave) return clasificarPorPalabras(texto, publicacion);
   try {
@@ -120,6 +125,13 @@ export async function clasificar(texto: string, publicacion?: string | null): Pr
       signal: AbortSignal.timeout(10000),
     });
     const d = await r.json();
+    reportarUsoIA({
+      agente: "atraccion",
+      canal: ctx?.canal || "meta",
+      conversacionId: ctx?.conversationId,
+      modelo: d?.model || MODELO,
+      usage: d?.usage,
+    });
     const uso = d?.content?.find((c: any) => c.type === "tool_use");
     const cat = uso?.input?.categoria as Categoria | undefined;
     if (cat && ["lomas", "arena", "general", "visita", "otro", "ignorar"].includes(cat)) return cat;
@@ -318,7 +330,7 @@ export async function responderAutomatico(e: Entrada) {
       return;
     }
 
-    const categoria = await clasificar(e.texto, e.publicacion);
+    const categoria = await clasificar(e.texto, e.publicacion, { canal: e.plataforma, conversationId: e.conversationId });
     console.log(`[auto] ${e.plataforma}/${e.via} → ${categoria}: ${e.texto.slice(0, 80)}`);
     if (categoria === "ignorar") return;
 
