@@ -530,20 +530,8 @@ async function procesarContacto(
       conv.id,
       `🆕 Ali creó el lead con los datos que dio el cliente. Queda a cargo de Nicolás mientras lo atiende Ali; pasa a un asesor al llegar a ${PUNTAJE_PARA_ASESOR} puntos, si agenda una visita o si pide una persona.`
     );
-    // Registro en el grupo de leads, como el chat web (Nicolás, 12-11-2026).
-    // Sin teléfono ni correo: en el grupo están todos los asesores.
-    await avisarAlGrupo(
-      [
-        `🤖 *Nuevo lead por IA · ${red}*`,
-        "",
-        `*Cliente:* ${nombre || conv.metaName || "Sin nombre"}`,
-        interes ? `*Busca:* ${interes}` : null,
-        "*Lo atiende:* Ali",
-        `Pasa a un asesor de la rueda al llegar a ${PUNTAJE_PARA_ASESOR} puntos, si agenda una visita o si pide una persona.`,
-      ]
-        .filter((l) => l !== null)
-        .join("\n")
-    );
+    // Sin aviso a ningún grupo al crearlo (Nicolás, 12-11-2026): el grupo de
+    // leads solo se entera cuando el lead pasa a un asesor (pasarAlAsesor).
   } catch (error) {
     console.error(`[ali-redes] No se pudo guardar el contacto de ${conversationId}:`, error);
   }
@@ -609,6 +597,7 @@ export async function pasarAlAsesor(leadId: string, motivo: string, resumen?: st
   }
 }
 
+/** Aviso al grupo de leads de los asesores. */
 async function avisarAlGrupo(texto: string) {
   const url = process.env.EVOLUTION_API_URL?.replace(/\/+$/, "");
   const apiKey = process.env.EVOLUTION_API_KEY;
