@@ -190,11 +190,17 @@ export interface Plantilla {
 
 export function plantilla(
   categoria: Categoria,
-  ctx: { nombre?: string | null; plataforma: string; via: Via; conversationId: string }
+  ctx: { nombre?: string | null; plataforma: string; via: Via; conversationId: string; conAli?: boolean }
 ): Plantilla | null {
   const l = (ruta: string) => enlace(ruta, ctx.plataforma, ctx.via, categoria, ctx.conversationId);
   const hola = saludo(ctx.nombre);
-  const cierre = "¿Tienes alguna duda? Escríbenos por aquí mismo y un asesor te responde 😊";
+  // Con Ali encendida (aliRedes.ts) la conversación sigue con ella, no con un asesor.
+  const cierre = ctx.conAli
+    ? "Si tienes cualquier duda, escríbenos por aquí mismo y con gusto te ayudamos 😊"
+    : "¿Tienes alguna duda? Escríbenos por aquí mismo y un asesor te responde 😊";
+  const cierreVisita = ctx.conAli
+    ? "Si prefieres, escríbenos por aquí y con gusto te ayudamos a agendar tu visita 😊"
+    : "Un asesor te escribe por aquí para coordinar 😊";
   const publica = PUBLICAS[Math.floor(Math.random() * PUBLICAS.length)];
 
   switch (categoria) {
@@ -218,7 +224,7 @@ export function plantilla(
       };
     case "visita":
       return {
-        texto: `${hola} ¡Claro que puedes venir a conocer los terrenos!\n\n📅 Pincha aquí para elegir el día de tu visita 👇\n${l("/agendar-visita")}\n\nSi quieres ver la información antes:\n🌲 Lomas del Mar 👉 ${l("/brochure/lomas-del-mar")}\n☀️ Arena y Sol 👉 ${l("/brochure/arena-y-sol")}\n\nUn asesor te escribe por aquí para coordinar 😊`,
+        texto: `${hola} ¡Claro que puedes venir a conocer los terrenos!\n\n📅 Pincha aquí para elegir el día de tu visita 👇\n${l("/agendar-visita")}\n\nSi quieres ver la información antes:\n🌲 Lomas del Mar 👉 ${l("/brochure/lomas-del-mar")}\n☀️ Arena y Sol 👉 ${l("/brochure/arena-y-sol")}\n\n${cierreVisita}`,
         imagen: null,
         publica,
       };
@@ -311,39 +317,58 @@ export interface Entrada {
  * Clasifica y responde. Nunca lanza: si algo falla queda en el log y la
  * conversación sigue en la bandeja como siempre.
  */
-export async function responderAutomatico(e: Entrada) {
+export interface OpcionesRespuesta {
+  /** Ali sigue la conversación después (aliRedes.ts): cambia el cierre del mensaje. */
+  conAli?: boolean;
+  /** Texto para la respuesta pública bajo el comentario (con Ali: los precios reales). */
+  textoPublico?: string | null;
+}
+
+export interface ResultadoRespuesta {
+  categoria: Categoria | null;
+  enviado: boolean;
+}
+
+export async function responderAutomatico(e: Entrada, opciones: OpcionesRespuesta = {}): Promise<ResultadoRespuesta> {
+  const nada: ResultadoRespuesta = { categoria: null, enviado: false };
   // Cada salida deja su línea: sin ellas no se sabe por qué no respondió.
   if (!respuestaAutoActiva()) {
     console.log(
       `[auto] Apagada: META_PAGE_ACCESS_TOKEN ${process.env.META_PAGE_ACCESS_TOKEN ? "ok" : "FALTA"}, ` +
         `RESPUESTA_AUTO_ACTIVA=${JSON.stringify(process.env.RESPUESTA_AUTO_ACTIVA ?? null)}`,
     );
-    return;
+    return nada;
   }
   if (!e.texto.trim()) {
     console.log(`[auto] ${e.plataforma}/${e.via}: sin texto, no respondo.`);
-    return;
+    return nada;
   }
   console.log(`[auto] Recibido ${e.plataforma}/${e.via} en ${e.conversationId}`);
   try {
     if (await yaAtendida(e.conversationId)) {
       console.log(`[auto] ${e.conversationId}: ya tuvo respuesta de asesor o automática en ${DIAS_ENTRE_RESPUESTAS} días, no respondo.`);
-      return;
+      return nada;
     }
 
     const categoria = await clasificar(e.texto, e.publicacion, { canal: e.plataforma, conversationId: e.conversationId });
     console.log(`[auto] ${e.plataforma}/${e.via} → ${categoria}: ${e.texto.slice(0, 80)}`);
-    if (categoria === "ignorar") return;
+    if (categoria === "ignorar") return { categoria, enviado: false };
 
     const p = plantilla(categoria, {
       nombre: e.nombre,
       plataforma: e.plataforma,
       via: e.via,
       conversationId: e.conversationId,
+      conAli: opciones.conAli,
     });
     if (!p) {
-      await anotar(e.conversationId, `Respuesta automática: no se envió nada (${NOMBRE_CATEGORIA[categoria]}). Lo atiende un asesor.`);
-      return;
+      await anotar(
+        e.conversationId,
+        opciones.conAli
+          ? "⚠️ Mensaje delicado (reclamo, desconfianza, insulto o postventa). No se respondió: falta el protocolo de respuesta, lo revisa una persona."
+          : `Respuesta automática: no se envió nada (${NOMBRE_CATEGORIA[categoria]}). Lo atiende un asesor.`
+      );
+      return { categoria, enviado: false };
     }
 
     let conversationId = e.conversationId;
@@ -360,11 +385,11 @@ export async function responderAutomatico(e: Entrada) {
       await guardar(conversationId, p.texto, privado.message_id);
 
       // 2. Respuesta pública bajo el comentario.
-      await responderEnPublico(e.commentId, e.plataforma, conversationId, p.publica);
+      await responderEnPublico(e.commentId, e.plataforma, conversationId, opciones.textoPublico || p.publica);
     } else {
       // DM: la ventana de 24 h está abierta porque la persona acaba de escribir.
       const psid = await psidDe(conversationId);
-      if (!psid) return;
+      if (!psid) return { categoria, enviado: false };
       if (p.imagen) {
         try {
           const img = await graph("/me/messages", {
@@ -387,8 +412,10 @@ export async function responderAutomatico(e: Entrada) {
     }
 
     await anotar(conversationId, `Respuesta automática enviada: ${NOMBRE_CATEGORIA[categoria]}.`);
+    return { categoria, enviado: true };
   } catch (error) {
     console.error("[auto] Error en la respuesta automática:", error);
+    return nada;
   }
 }
 

@@ -2,10 +2,11 @@ import prisma from "./prisma";
 import { BARBARA_ID, MARCELA_ID, ORLANDO_ID, getNextAdvisorId } from "./assignment";
 import { createNotification } from "./notifications";
 import { ALI_SENDER, HANDOFF_SOURCE, avisarDerivacion } from "./ali";
+import { enviarAlGrupo } from "./avisosWhatsappLeads";
 import {
+  AUTO_SOURCE,
   EVENTO_SOURCE,
   anotar,
-  clasificar,
   esCuentaDePrueba,
   graph,
   guardar,
@@ -43,6 +44,12 @@ const VENTANA_META_MS = 24 * 60 * 60 * 1000;
 const ESPERA_ASESOR_MS = 2 * 60 * 60 * 1000;
 const DIAS_ENTRE_COMENTARIOS = 7;
 const TIMEOUT_SITIO_MS = 60_000;
+
+/** Dueño de los leads que crea Ali mientras ella los atiende: Nicolás (12-11-2026). */
+export const DUENO_MIENTRAS_ALI = "initial-admin-id";
+/** Lead score (public.lead_score, lo calcula el CRM web) desde el que el lead pasa a un asesor. */
+export const PUNTAJE_PARA_ASESOR = 28;
+const FUENTES_IA = ["Instagram - IA", "Facebook - IA"];
 
 export type ModoAliRedes = "apagada" | "prueba" | "todos";
 
@@ -84,39 +91,47 @@ export async function atenderMeta(a: AvisoMeta) {
       return;
     }
 
+    // Comentario: el brochure con "pincha aquí" por privado y los precios reales
+    // en público. Quien comenta no inició una conversación: por eso va el
+    // enlace. Si después escribe, conversa con Ali (Nicolás, 12-11-2026).
     if (a.via === "comentario") {
-      // Emojis, etiquetas a amigos y "qué lindo" no se contestan.
-      const categoria = await clasificar(a.texto, a.publicacion, { canal: a.plataforma, conversationId: a.conversationId });
-      if (categoria === "ignorar") {
-        console.log(`[ali-redes] Comentario sin pregunta en ${a.conversationId}, no respondo.`);
-        return;
-      }
-      if (categoria === "otro") {
-        await comentarioDelicado(a);
-        return;
-      }
+      const publica = await preciosPublicos(`${a.publicacion || ""} ${a.texto}`);
+      await responderAutomatico(a, { conAli: true, textoPublico: publica });
+      return;
     }
+    // Inbox: la persona vino a conversar. Ali saluda, pregunta el nombre y da
+    // la información ella misma, sin enlaces.
     programar(a);
   } catch (error) {
     console.error("[ali-redes] Error atendiendo el aviso de Meta:", error);
   }
 }
 
-/* ── Comentarios delicados ────────────────────────────────────────────── */
+/* ── Primer contacto ──────────────────────────────────────────────────── */
 
-/**
- * Reclamos, "estafa", insultos, postventa o algo que pide una persona
- * (categoría "otro" del clasificador). Nicolás pidió armar un protocolo de
- * respuesta más adelante (11-11-2026). Mientras tanto Ali NO contesta, ni en
- * público ni por privado: queda una nota para que lo vea una persona, igual
- * que hacía la plantilla. Cuando exista el protocolo, se implementa acá.
+/*
+ * Comentarios delicados (reclamo, "estafa", insulto, postventa: categoría
+ * "otro"): responderAutomatico no manda nada y deja una nota para una persona.
+ * Nicolás pidió armar ese protocolo más adelante (11-11-2026); cuando exista,
+ * se implementa ahí.
  */
-async function comentarioDelicado(a: AvisoMeta) {
-  console.log(`[ali-redes] Comentario delicado en ${a.conversationId}: queda para el equipo.`);
-  await anotar(
-    a.conversationId,
-    "⚠️ Comentario delicado (reclamo, desconfianza, insulto o postventa). Ali no respondió: falta el protocolo de respuesta, lo revisa una persona."
-  );
+
+/** Precios reales para la respuesta pública, desde el sitio (misma lista que las tarjetas). */
+async function preciosPublicos(texto: string): Promise<string | null> {
+  try {
+    const base = (process.env.ALI_SITIO_URL || "https://aliminspa.cl").replace(/\/+$/, "");
+    const res = await fetch(`${base}/api/ali/precios?texto=${encodeURIComponent(texto.slice(0, 1500))}`, {
+      headers: { "x-ia-secret": process.env.IA_SECRET as string },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) throw new Error(`el sitio respondió ${res.status}`);
+    const d = (await res.json()) as { publica?: string };
+    return typeof d.publica === "string" && d.publica.trim() ? d.publica.trim().slice(0, 1500) : null;
+  } catch (error) {
+    // Sin precios sale la frase de siempre ("te escribimos por interno").
+    console.error("[ali-redes] No se pudieron traer los precios para la respuesta pública:", error);
+    return null;
+  }
 }
 
 /* ── Turnos por conversación ──────────────────────────────────────────── */
@@ -240,7 +255,9 @@ async function responder(a: AvisoMeta) {
     }
     if (m.senderType === ALI_SENDER) {
       if (m.text.startsWith("(Respuesta pública")) return [];
-      return [{ de: "ali", texto: m.text.replace(/^\[Portada del brochure\]\s*/, "") }];
+      const texto = m.text.replace(/^\[Portada del brochure\]\s*/, "");
+      // El brochure del primer contacto va marcado: Ali no lo cuenta como que ya se presentó.
+      return [{ de: "ali", texto: m.sourceType === AUTO_SOURCE ? `[Mensaje automático con el brochure] ${texto}` : texto }];
     }
     if (m.senderType === "advisor") return [{ de: "asesor", texto: m.text }];
     return [];
@@ -302,10 +319,18 @@ async function responder(a: AvisoMeta) {
     }
   }
 
+  const leadId =
+    (await prisma.conversation.findUnique({ where: { id: conversationId }, select: { leadId: true } }))?.leadId || null;
   if (r.visita) {
     await anotar(conversationId, `📅 Ali agendó una visita a ${r.visita.proyecto} el ${r.visita.fecha} a las ${r.visita.hora}.`);
+    // La visita la guía un asesor: pasa de inmediato.
+    if (leadId) await pasarAlAsesor(leadId, `agendó una visita a ${r.visita.proyecto} el ${r.visita.fecha} a las ${r.visita.hora}`);
   }
-  if (r.derivacion) await derivar(conversationId, plataforma, r.derivacion);
+  if (r.derivacion) {
+    const pasado = leadId ? await pasarAlAsesor(leadId, `pidió un asesor: ${r.derivacion.motivo}`, r.derivacion.resumen) : false;
+    // Sin lead de Ali (todavía no da sus datos, o ya era de un asesor): aviso de siempre.
+    if (!pasado) await derivar(conversationId, plataforma, r.derivacion);
+  }
 }
 
 async function pedirAlSitio(cuerpo: unknown): Promise<RespuestaSitio> {
@@ -469,8 +494,11 @@ async function procesarContacto(
     // Sin teléfono ni correo todavía no hay lead que crear.
     if (!telefono && !email) return;
 
+    // Mientras lo atiende Ali, el lead es de Nicolás y no avisa a nadie
+    // (12-11-2026). Pasa a la rueda con pasarAlAsesor(): 28 puntos de lead
+    // score, visita agendada o derivación. followupStage 3 lo deja fuera de la
+    // escalera de recordatorios de followups.ts.
     const source = `${red} - IA`;
-    const assignedToId = await getNextAdvisorId([MARCELA_ID, ORLANDO_ID, BARBARA_ID], source);
     let creado;
     try {
       creado = await prisma.lead.create({
@@ -484,7 +512,8 @@ async function procesarContacto(
           preferredChannel: red,
           notes: interes ? `Ali (${red}): ${interes}` : null,
           lastActivity: `Lead creado por Ali en ${red}`,
-          assignedToId,
+          assignedToId: DUENO_MIENTRAS_ALI,
+          followupStage: 3,
         },
       });
     } catch (error: any) {
@@ -497,21 +526,119 @@ async function procesarContacto(
       throw error;
     }
     await prisma.conversation.update({ where: { id: conv.id }, data: { leadId: creado.id } });
-
-    const asesor = assignedToId ? await prisma.user.findUnique({ where: { id: assignedToId }, select: { name: true } }) : null;
-    await anotar(conv.id, `🆕 Ali creó el lead con los datos que dio el cliente${asesor?.name ? ` y quedó asignado a ${asesor.name}` : ""}.`);
-    if (assignedToId) {
-      await createNotification({
-        userId: assignedToId,
-        title: `📲 Nuevo lead de ${red} (Ali)`,
-        body: `${nombre || conv.metaName || "Cliente"}${interes ? ` · ${interes}` : ""}`.slice(0, 160),
-        leadId: creado.id,
-        type: "NEW_LEAD",
-      }).catch((e) => console.error("[ali-redes] No salió el push del lead nuevo:", e));
-    }
+    await anotar(
+      conv.id,
+      `🆕 Ali creó el lead con los datos que dio el cliente. Queda a cargo de Nicolás mientras lo atiende Ali; pasa a un asesor al llegar a ${PUNTAJE_PARA_ASESOR} puntos, si agenda una visita o si pide una persona.`
+    );
+    // Registro en el grupo de leads, como el chat web (Nicolás, 12-11-2026).
+    // Sin teléfono ni correo: en el grupo están todos los asesores.
+    await avisarAlGrupo(
+      [
+        `🤖 *Nuevo lead por IA · ${red}*`,
+        "",
+        `*Cliente:* ${nombre || conv.metaName || "Sin nombre"}`,
+        interes ? `*Busca:* ${interes}` : null,
+        "*Lo atiende:* Ali",
+        `Pasa a un asesor de la rueda al llegar a ${PUNTAJE_PARA_ASESOR} puntos, si agenda una visita o si pide una persona.`,
+      ]
+        .filter((l) => l !== null)
+        .join("\n")
+    );
   } catch (error) {
     console.error(`[ali-redes] No se pudo guardar el contacto de ${conversationId}:`, error);
   }
+}
+
+/* ── Paso del lead de Ali a un asesor ─────────────────────────────────── */
+
+/**
+ * Pasa un lead que atiende Ali (de Nicolás, origen "… - IA") a un asesor de
+ * la rueda, con push y aviso al grupo. Devuelve false si el lead no es de Ali
+ * o si otro proceso ya lo pasó. El cambio de dueño es atómico (updateMany
+ * condicionado), así que nunca se asigna dos veces.
+ */
+export async function pasarAlAsesor(leadId: string, motivo: string, resumen?: string | null): Promise<boolean> {
+  try {
+    const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+    if (!lead || lead.assignedToId !== DUENO_MIENTRAS_ALI || !FUENTES_IA.includes(lead.source || "")) return false;
+
+    const asesorId = await getNextAdvisorId([MARCELA_ID, ORLANDO_ID, BARBARA_ID], lead.source);
+    if (!asesorId) return false;
+    const r = await prisma.lead.updateMany({
+      where: { id: leadId, assignedToId: DUENO_MIENTRAS_ALI },
+      data: { assignedToId: asesorId, lastActivity: `Ali lo pasó a un asesor: ${motivo}`.slice(0, 190), lastNoteAt: new Date() },
+    });
+    if (!r.count) return false;
+
+    const asesor = await prisma.user.findUnique({ where: { id: asesorId }, select: { name: true } });
+    const nombre = [lead.firstName, lead.lastName].filter(Boolean).join(" ") || "Cliente";
+    const red = (lead.source || "").replace(/ - IA$/, "");
+    const interes = (lead.notes || "").replace(/^Ali \([^)]*\):\s*/, "").slice(0, 200);
+
+    const conversaciones = await prisma.conversation.findMany({ where: { leadId }, select: { id: true } });
+    for (const c of conversaciones) {
+      await anotar(c.id, `➡️ Ali pasó el lead a ${asesor?.name || "un asesor"}: ${motivo}.`).catch(() => {});
+    }
+
+    await createNotification({
+      userId: asesorId,
+      title: `🤖 Ali te pasa un lead de ${red}`,
+      body: `${nombre} · ${motivo}${interes ? ` · ${interes}` : ""}`.slice(0, 180),
+      leadId,
+      type: "NEW_LEAD",
+    }).catch((e) => console.error("[ali-redes] No salió el push del paso al asesor:", e));
+
+    // En el grupo están todos los asesores: nunca teléfono ni correo.
+    await avisarAlGrupo(
+      [
+        `🤖➡️👤 *Ali pasa un lead · ${red}*`,
+        "",
+        `*Cliente:* ${nombre}`,
+        `*Por qué:* ${motivo}`,
+        resumen ? `*Lo que conversó con Ali:* ${resumen.slice(0, 400)}` : interes ? `*Busca:* ${interes}` : null,
+        `*Asignado a:* ${asesor?.name || "asesor de la rueda"}`,
+      ]
+        .filter((l) => l !== null)
+        .join("\n")
+    );
+    console.log(`[ali-redes] Lead ${leadId} pasó a ${asesor?.name || asesorId}: ${motivo}`);
+    return true;
+  } catch (error) {
+    console.error(`[ali-redes] No se pudo pasar el lead ${leadId} al asesor:`, error);
+    return false;
+  }
+}
+
+async function avisarAlGrupo(texto: string) {
+  const url = process.env.EVOLUTION_API_URL?.replace(/\/+$/, "");
+  const apiKey = process.env.EVOLUTION_API_KEY;
+  const grupo = process.env.LEADS_WHATSAPP_GROUP;
+  if (!url || !apiKey || !grupo) return;
+  await enviarAlGrupo(texto, { url, apiKey, instancia: process.env.EVOLUTION_INSTANCE || "nico", grupo, desde: new Date() }).catch(
+    (e) => console.error("[ali-redes] No salió el aviso al grupo:", e)
+  );
+}
+
+/**
+ * Leads de Ali que ya juntaron el puntaje (o tienen visita agendada por otra
+ * vía, por ejemplo desde el enlace de la agenda): pasan a un asesor.
+ * Corre cada 10 minutos desde instrumentation.ts.
+ */
+export async function revisarPasesAlAsesor() {
+  const filas = await prisma.$queryRaw<{ id: string; score: number | null; visita: boolean }[]>`
+    SELECT l.id, s.score, (l."bookingId" IS NOT NULL) AS visita
+      FROM "Lead" l
+      LEFT JOIN public.lead_score s ON s.lead_id = l.id
+     WHERE l."assignedToId" = ${DUENO_MIENTRAS_ALI}
+       AND l.source IN (${FUENTES_IA[0]}, ${FUENTES_IA[1]})
+       AND (s.score >= ${PUNTAJE_PARA_ASESOR} OR l."bookingId" IS NOT NULL)
+     LIMIT 20`;
+  let n = 0;
+  for (const f of filas) {
+    const motivo = f.visita ? "tiene una visita agendada" : `llegó a ${f.score} puntos de lead score`;
+    if (await pasarAlAsesor(f.id, motivo)) n++;
+  }
+  return n;
 }
 
 /* ── Retomar cuando el asesor no responde ─────────────────────────────── */

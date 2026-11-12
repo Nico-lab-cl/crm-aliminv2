@@ -140,13 +140,21 @@ export async function register() {
     // Ali en Instagram y Facebook (lib/aliRedes.ts): retoma las conversaciones
     // donde el asesor lleva 2 h sin responder. Con ALI_REDES_ACTIVA apagada la
     // pasada no hace nada.
-    const { retomarPendientes } = await import("./lib/aliRedes");
+    // También pasa a un asesor los leads de Ali que llegaron a 28 puntos o
+    // tienen visita agendada.
+    const { retomarPendientes, revisarPasesAlAsesor } = await import("./lib/aliRedes");
     const timerAliRedes = setInterval(async () => {
       try {
         const n = await retomarPendientes();
         if (n) console.log(`[ali-redes] Retomando ${n} conversaciones sin respuesta del asesor.`);
       } catch (error) {
         console.error("[ali-redes] Falló la revisión de conversaciones pendientes:", error);
+      }
+      try {
+        const n = await revisarPasesAlAsesor();
+        if (n) console.log(`[ali-redes] ${n} leads de Ali pasaron a un asesor.`);
+      } catch (error) {
+        console.error("[ali-redes] Falló la revisión de leads para pasar al asesor:", error);
       }
     }, 10 * 60 * 1000);
     timerAliRedes.unref?.();
