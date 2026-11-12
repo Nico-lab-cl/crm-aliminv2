@@ -5,7 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { WEB_CHAT_PLATFORM } from "@/lib/web-chat";
 import { ErrorDeAdjunto, crearMensajeConAdjunto, validarAdjunto } from "@/lib/media";
 import { marcarContactado } from "@/lib/followups";
-import { asignarAlQueResponde } from "@/lib/ali";
+import { asignarAlQueResponde, puedeVerConversacion } from "@/lib/ali";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
       },
     });
 
-    if (!conversation) {
+    if (!conversation || !(await puedeVerConversacion(conversation.id, session.user))) {
       return NextResponse.json({ error: "Conversacion no encontrada" }, { status: 404 });
     }
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { puedeVerConversacion } from "@/lib/ali";
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = (await getServerSession(authOptions as any)) as any;
@@ -10,6 +11,12 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   }
 
   try {
+    // Mismo filtro que la bandeja: un chat asignado a otro asesor, o uno de
+    // Messenger/Instagram, no se abre aunque se conozca el enlace.
+    if (!(await puedeVerConversacion(params.id, session.user))) {
+      return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    }
+
     const conversation = await (prisma as any).conversation.findUnique({
       where: { id: params.id },
       include: {

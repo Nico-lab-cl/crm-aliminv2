@@ -40,6 +40,7 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sinAcceso, setSinAcceso] = useState(false);
 
   // Grabación de voz
   const [grabando, setGrabando] = useState(false);
@@ -55,10 +56,11 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
 
   useEffect(() => {
+    if (sinAcceso) return; // Sin acceso no se sigue consultando.
     fetchChat();
     const interval = setInterval(fetchChat, 5000); // Polling cada 5 seg
     return () => clearInterval(interval);
-  }, [params.id]);
+  }, [params.id, sinAcceso]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -78,6 +80,12 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
   const fetchChat = async () => {
     try {
       const res = await fetch(`/api/messages/conversations/${params.id}`);
+      // 404: el chat es de otro asesor o no es del chat web (ver filtroBandeja
+      // en lib/ali.ts). No se muestra nada de la conversación.
+      if (res.status === 404) {
+        setSinAcceso(true);
+        return;
+      }
       const data = await res.json();
       setConversation(data);
       setMessages(data.messages || []);
@@ -113,7 +121,15 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
         setInputText("");
         fetchChat();
       } else {
-        setError("No se pudo enviar el mensaje. Intenta de nuevo.");
+        // El servidor explica el rechazo de Meta en palabras del asesor
+        // (motivoDelRechazoDeMeta en /api/messages/send).
+        const datos = await res.json().catch(() => ({}));
+        setError(
+          datos.motivo ||
+            (res.status === 404
+              ? "Este chat ya no está a tu cargo: lo tiene asignado otro asesor."
+              : "No se pudo enviar el mensaje por un problema del servidor. Intenta de nuevo en un momento.")
+        );
       }
     } catch (error) {
       console.error("Error sending message", error);
@@ -239,6 +255,22 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
     setMsGrabados(0);
   };
 
+  if (sinAcceso) {
+    return (
+      <div className="p-8 flex flex-col items-center gap-4 text-center text-slate-500">
+        <AlertCircle size={32} className="text-slate-300" />
+        <p className="font-medium">Este chat no está disponible.</p>
+        <p className="text-sm text-slate-400">Puede que lo tenga asignado otro asesor.</p>
+        <button
+          onClick={() => router.push("/inbox")}
+          className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-sm font-bold hover:bg-slate-200"
+        >
+          Volver a la bandeja
+        </button>
+      </div>
+    );
+  }
+
   if (!conversation) return <div className="p-8 text-center text-slate-400">Cargando chat...</div>;
 
   // En el chat web sí sabemos si la persona sigue con la ventana abierta: el
@@ -253,6 +285,20 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
   // exigen subir el archivo a la API de Meta primero, que no está construido;
   // mostrar los botones ahí prometería algo que el servidor va a rechazar.
   const puedeAdjuntar = esChatWeb;
+
+  // Messenger e Instagram solo dejan responder por mensaje privado hasta 24 h
+  // después del último mensaje del cliente. Se avisa antes de que el asesor
+  // escriba, en vez de dejarlo descubrirlo con un error. Si lo último del
+  // cliente fue un comentario, la respuesta va al comentario y no hay plazo.
+  const red = conversation.platform === "instagram" ? "Instagram" : "Facebook";
+  const ultimoDelCliente = esChatWeb ? null : [...messages].reverse().find((m) => m?.senderType === "meta");
+  const horasDesdeElCliente =
+    ultimoDelCliente?.sourceType === "DIRECT"
+      ? (Date.now() - new Date(ultimoDelCliente.createdAt).getTime()) / 3_600_000
+      : null;
+  const ventanaCerrada = horasDesdeElCliente !== null && horasDesdeElCliente >= 24;
+  const horasQueQuedan =
+    horasDesdeElCliente !== null && !ventanaCerrada ? Math.max(1, Math.floor(24 - horasDesdeElCliente)) : null;
 
   return (
     <div className="flex flex-col h-screen bg-[#F5F7F9]">
@@ -482,8 +528,38 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
         </div>
       )}
 
+      {!esChatWeb && !ventanaCerrada && (
+        <div className="mx-4 mb-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-[12px] text-slate-600 leading-snug">
+          {horasQueQuedan !== null && horasQueQuedan <= 6
+            ? `⏳ Quedan ${horasQueQuedan === 1 ? "menos de 1 hora" : `${horasQueQuedan} horas`} para responderle por ${red}. Después ${red} no deja enviarle mensajes hasta que vuelva a escribir.`
+            : `Por ${red} solo se puede responder con texto (fotos y audios funcionan solo en el chat web).`}
+        </div>
+      )}
+
       {/* Input Bar */}
-      {grabando ? (
+      {ventanaCerrada ? (
+        /* Pasadas las 24 h Meta rechaza cualquier mensaje: en vez de una
+           caja de texto que va a fallar, se dice por qué y qué hacer. */
+        <div className="p-4 bg-white border-t border-slate-100 pb-8 flex flex-col gap-3">
+          <div className="px-3 py-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2">
+            <AlertCircle size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
+            <p className="text-[12px] text-amber-800 leading-snug">
+              <b>Ya no se le puede escribir por {red}.</b> {red} solo deja responder hasta 24 horas después del
+              último mensaje del cliente, y ya pasaron. Llámalo o escríbele por WhatsApp desde su ficha. Si vuelve a
+              escribir por {red}, aquí se habilita de nuevo la respuesta.
+            </p>
+          </div>
+          {conversation.leadId && (
+            <button
+              type="button"
+              onClick={() => router.push(`/dashboard/leads/${conversation.leadId}`)}
+              className="w-full h-12 bg-primary text-white rounded-2xl text-sm font-bold shadow-lg shadow-primary/20 active:scale-95 transition-all"
+            >
+              Abrir ficha del lead
+            </button>
+          )}
+        </div>
+      ) : grabando ? (
         /* Barra de grabación: reemplaza la de escritura para que no quede
            ninguna duda de que el micrófono está abierto. */
         <div className="p-4 bg-white border-t border-slate-100 flex gap-3 items-center pb-8">

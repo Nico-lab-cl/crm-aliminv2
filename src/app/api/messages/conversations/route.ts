@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { filtroBandeja } from "@/lib/ali";
 
 export async function GET(req: Request) {
   const session = (await getServerSession(authOptions as any)) as any;
@@ -10,7 +11,10 @@ export async function GET(req: Request) {
   }
 
   try {
-    const conversations = await (prisma as any).conversation.findMany({
+    // Solo chat web atendido por Ali y, para un asesor, solo lo suyo o lo que
+    // no tiene dueño (ver filtroBandeja en lib/ali.ts).
+    const conversations = await prisma.conversation.findMany({
+      where: filtroBandeja(session.user),
       include: {
         lead: {
           select: {

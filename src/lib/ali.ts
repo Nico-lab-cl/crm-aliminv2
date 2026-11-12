@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "./prisma";
 import { createNotification } from "./notifications";
 import { WEB_CHAT_PLATFORM, WEB_CHAT_SENDER, webChatPsid } from "./web-chat";
@@ -34,6 +35,61 @@ export interface EstadoAli {
   activa: boolean;
   /** Cuándo pidió Ali un asesor por última vez, si lo pidió. */
   derivadaAt: Date | null;
+}
+
+/**
+ * Qué conversaciones entran a la bandeja del CRM (/inbox, la misma pantalla en
+ * la web y en la app de asesores).
+ *
+ *   - El chat web que atendió Ali.
+ *   - De Instagram y Facebook, solo lo que Ali derivó a una persona: pidió un
+ *     asesor (mensaje HANDOFF) o pasó su lead a la rueda (pasarAlAsesor en
+ *     lib/aliRedes.ts). El resto de Messenger, Instagram y los comentarios no
+ *     entra: eran miles de conversaciones y la pantalla se ponía lenta.
+ *   - Un asesor ve sus propios chats y los que todavía no tienen dueño (el
+ *     primero que responde se queda el lead). Los asignados a otro asesor no
+ *     los ve ni los puede abrir. El administrador ve todos.
+ */
+export function filtroBandeja(usuario: { id: string; role?: string | null }): Prisma.ConversationWhereInput {
+  const filtro: Prisma.ConversationWhereInput = {
+    OR: [
+      { platform: WEB_CHAT_PLATFORM, messages: { some: { senderType: ALI_SENDER } } },
+      {
+        platform: { in: ["instagram", "facebook"] },
+        OR: [
+          { messages: { some: { senderType: ALI_SENDER, sourceType: HANDOFF_SOURCE } } },
+          // Lead de Ali que ya salió de las manos de Nicolás hacia un asesor.
+          { lead: { is: { source: { in: FUENTES_IA }, assignedToId: { not: DUENO_MIENTRAS_ALI } } } },
+        ],
+      },
+    ],
+  };
+  if (usuario.role === "ADMIN") return filtro;
+
+  return {
+    AND: [
+      filtro,
+      {
+        OR: [
+          { lead: { is: { assignedToId: usuario.id } } },
+          { lead: { is: { assignedToId: null } } },
+          // Ali puede derivar en redes antes de que la persona dé sus datos.
+          { leadId: null },
+        ],
+      },
+    ],
+  };
+}
+
+/** ¿Puede este usuario abrir o responder esta conversación desde la bandeja? */
+export async function puedeVerConversacion(
+  conversationId: string,
+  usuario: { id: string; role?: string | null }
+) {
+  const visibles = await prisma.conversation.count({
+    where: { AND: [{ id: conversationId }, filtroBandeja(usuario)] },
+  });
+  return visibles > 0;
 }
 
 export async function estadoAli(conversationId: string): Promise<EstadoAli> {
@@ -91,12 +147,11 @@ export async function conversacionDelVisitante(conversationId: string, sessionId
 }
 
 /**
- * Regla de "el primero que responde se queda el lead", con la derivación de Ali.
+ * Regla de "el primero que responde se queda el lead".
  *
- * Sin dueño, el lead es del primero que responde, como siempre. Si Ali pidió
- * un asesor, el lead también es del primero que responde aunque la rueda ya se
- * lo haya asignado a otro: la derivación sale al grupo para que lo tome
- * cualquiera, y quien lo toma se lo queda.
+ * Solo vale para el lead sin dueño. Si ya tiene asesor, sigue siendo suyo
+ * aunque Ali haya pedido una persona: la derivación se le avisa a él (ver
+ * avisarDerivacion) y los demás asesores ni ven ese chat en la bandeja.
  */
 export async function asignarAlQueResponde(
   conversation: { id: string; leadId: string | null; lead?: { assignedToId: string | null } | null },
@@ -104,14 +159,7 @@ export async function asignarAlQueResponde(
 ) {
   if (!conversation.leadId) return;
 
-  let asignar = !conversation.lead?.assignedToId;
-
-  if (!asignar && conversation.lead?.assignedToId !== advisorId) {
-    const estado = await estadoAli(conversation.id);
-    asignar = estado.activa && estado.derivadaAt !== null;
-  }
-
-  if (asignar) {
+  if (!conversation.lead?.assignedToId) {
     await prisma.lead.update({
       where: { id: conversation.leadId },
       data: { assignedToId: advisorId },
@@ -166,9 +214,12 @@ export async function contextoParaAli(conversationId: string) {
 }
 
 /**
- * Avisa que un cliente del chat web necesita una persona: push a todos los
- * asesores de la rueda (y al asignado, si es otro) y mensaje al grupo de
+ * Avisa que un cliente necesita una persona: push y mensaje al grupo de
  * WhatsApp de leads. Nunca lanza: un aviso caído no puede tumbar el chat.
+ *
+ * Si el lead ya tiene asesor, el aviso es para él: solo él recibe el push y el
+ * grupo dice que le toca a él (los demás no ven ese chat en la bandeja). Sin
+ * asesor, el push va a toda la rueda y el primero que responde se lo queda.
  */
 export async function avisarDerivacion({
   leadId,
@@ -188,8 +239,7 @@ export async function avisarDerivacion({
   /** Dónde está conversando: "Chat web", "Instagram" o "Facebook". */
   canal?: string;
 }) {
-  const destinatarios = new Set<string>(ASESORES_ANUNCIABLES);
-  if (asignadoId) destinatarios.add(asignadoId);
+  const destinatarios = new Set<string>(asignadoId ? [asignadoId] : ASESORES_ANUNCIABLES);
 
   const push = Promise.allSettled(
     Array.from(destinatarios).map((userId) =>
@@ -222,9 +272,11 @@ export async function avisarDerivacion({
       `*Cliente:* ${nombre}`,
       `*Motivo:* ${motivo}`,
       resumen ? `*Lo que conversó con Ali:* ${resumen}` : null,
-      asignadoNombre ? `*Asesor asignado:* ${asignadoNombre}` : "*Asesor asignado:* sin asignar",
+      asignadoId ? `*Asesor asignado:* ${asignadoNombre || "su asesor"}` : "*Asesor asignado:* sin asignar",
       "",
-      "El primero que le responda desde el CRM se queda el lead.",
+      asignadoId
+        ? `👉 Le toca a *${asignadoNombre || "su asesor"}*: respóndele desde la bandeja del CRM.`
+        : "El primero que le responda desde el CRM se queda el lead.",
     ]
       .filter((l) => l !== null)
       .join("\n");

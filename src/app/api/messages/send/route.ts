@@ -4,7 +4,43 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { WEB_CHAT_PLATFORM } from "@/lib/web-chat";
 import { marcarContactado } from "@/lib/followups";
-import { asignarAlQueResponde } from "@/lib/ali";
+import { asignarAlQueResponde, puedeVerConversacion } from "@/lib/ali";
+
+/**
+ * Explica en palabras del asesor por qué Meta no dejó enviar el mensaje y qué
+ * hacer en cambio. El texto sale tal cual en la pantalla del chat.
+ *
+ * Códigos de la Graph API: 10/2018278 y 2534022 son la ventana de 24 h de
+ * Messenger e Instagram; 551 y 100/2018001 son una persona que ya no recibe
+ * mensajes de la página (cerró la cuenta, bloqueó o borró el chat).
+ */
+function motivoDelRechazoDeMeta(error: any, plataforma: string) {
+  const red = plataforma === "instagram" ? "Instagram" : "Facebook";
+  const code = Number(error?.code);
+  const subcode = Number(error?.error_subcode);
+  const mensaje = String(error?.message || "").toLowerCase();
+
+  if (subcode === 2018278 || subcode === 2534022 || mensaje.includes("outside of allowed window")) {
+    return (
+      `${red} solo deja responder hasta 24 horas después del último mensaje del cliente, ` +
+      `y ese plazo ya pasó. Llámalo o escríbele por WhatsApp desde su ficha; ` +
+      `si vuelve a escribir por ${red}, se le puede responder de nuevo desde acá.`
+    );
+  }
+  if (code === 551 || subcode === 2018001) {
+    return (
+      `Esta persona ya no recibe mensajes de la página en ${red} ` +
+      `(puede haber bloqueado la cuenta o borrado el chat). Contáctalo por teléfono o WhatsApp desde su ficha.`
+    );
+  }
+  if (code === 190 || code === 200 || code === 10) {
+    return `${red} rechazó el envío por un permiso de la página. Avísale a Nicolás; mientras tanto contacta al cliente por teléfono o WhatsApp.`;
+  }
+  if (code === 4 || code === 613 || code === 32) {
+    return `${red} está recibiendo demasiados mensajes de la página. Espera un par de minutos y vuelve a intentar.`;
+  }
+  return `${red} no aceptó el mensaje. Intenta de nuevo en un rato; si sigue fallando, contacta al cliente por teléfono o WhatsApp.`;
+}
 
 export async function POST(req: Request) {
   const session = (await getServerSession(authOptions as any)) as any;
@@ -22,7 +58,9 @@ export async function POST(req: Request) {
       include: { lead: true }
     });
 
-    if (!conversation) {
+    // Solo se responde lo que se puede ver en la bandeja: un asesor no le
+    // escribe a un chat asignado a otro (ver filtroBandeja en lib/ali.ts).
+    if (!conversation || !(await puedeVerConversacion(conversation.id, session.user))) {
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
     }
 
@@ -64,14 +102,20 @@ export async function POST(req: Request) {
       metaId = metaData?.message_id || metaData?.id || null;
       if (!metaResponse?.ok) {
         console.error("Error de Meta API:", metaData);
-        return NextResponse.json({ error: "Failed to send message via Meta", details: metaData }, { status: 500 });
+        return NextResponse.json(
+          {
+            error: "Failed to send message via Meta",
+            motivo: motivoDelRechazoDeMeta(metaData?.error, conversation.platform),
+            details: metaData,
+          },
+          { status: 502 }
+        );
       }
     }
 
     // 3. AUTO-ASIGNACIÓN: Si el Lead no tiene asesor, asignarlo al actual
     const senderId = (session.user as any).id;
-    //    Si Ali había pedido un asesor, el que responde se lo queda aunque la
-    //    rueda ya se lo hubiera dado a otro (ver lib/ali.ts).
+    //    Si ya tiene asesor, sigue siendo suyo (ver lib/ali.ts).
     await asignarAlQueResponde(conversation, senderId);
 
     // 4. Guardar el mensaje del asesor en la base de datos
