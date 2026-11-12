@@ -172,6 +172,7 @@ export async function avisarDerivacion({
   resumen,
   asignadoId,
   asignadoNombre,
+  canal = "Chat web",
 }: {
   leadId: string | null;
   nombre: string;
@@ -179,6 +180,8 @@ export async function avisarDerivacion({
   resumen: string;
   asignadoId: string | null;
   asignadoNombre: string | null;
+  /** Dónde está conversando: "Chat web", "Instagram" o "Facebook". */
+  canal?: string;
 }) {
   const destinatarios = new Set<string>(ASESORES_ANUNCIABLES);
   if (asignadoId) destinatarios.add(asignadoId);
@@ -187,7 +190,7 @@ export async function avisarDerivacion({
     Array.from(destinatarios).map((userId) =>
       createNotification({
         userId,
-        title: `🙋 ${nombre} pide un asesor en el chat web`,
+        title: `🙋 ${nombre} pide un asesor ${canal === "Chat web" ? "en el chat web" : `por ${canal}`}`,
         body: motivo.length > 120 ? `${motivo.slice(0, 117)}...` : motivo,
         // Mismo tipo que el resto de los avisos del chat: los APK instalados
         // descartan en silencio los tipos que no conocen (ver web-chat.ts).
@@ -209,7 +212,7 @@ export async function avisarDerivacion({
     // Igual que los avisos de leads: en el grupo están todos los asesores, así
     // que no va el teléfono ni el correo del cliente.
     const texto = [
-      "🙋 *Cliente pide un asesor · Chat web*",
+      `🙋 *Cliente pide un asesor · ${canal}*`,
       "",
       `*Cliente:* ${nombre}`,
       `*Motivo:* ${motivo}`,

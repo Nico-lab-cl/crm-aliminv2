@@ -1,5 +1,6 @@
 import prisma from "./prisma";
 import { MARCELA_ID, ORLANDO_ID, BARBARA_ID } from "./assignment";
+import { metricasIA, textoMetricasIA } from "./metricasIA";
 import {
   ASESORES_ANUNCIABLES,
   MAX_INTENTOS,
@@ -307,7 +308,15 @@ async function armarTexto(titulo: string, desde: string, hasta: string) {
     metaError = String(error?.message || error);
     return process.env.META_ADS_TOKEN ? { error: metaError } : null;
   });
-  return { texto: textoResumen(titulo, crm, meta), metaError };
+  // Ali por canal (lib/metricasIA.ts). Si falla, el resumen sale igual sin estas líneas.
+  const ia = await metricasIA(inicioDelDiaEnChile(desde), inicioDelDiaEnChile(sumarDias(hasta, 1)))
+    .then(textoMetricasIA)
+    .catch((error) => {
+      console.error("[resumenes-whatsapp] No se pudieron leer las métricas de Ali:", error);
+      return [] as string[];
+    });
+  const texto = textoResumen(titulo, crm, meta) + (ia.length ? `\n\n${ia.join("\n")}` : "");
+  return { texto, metaError };
 }
 
 /** `destino` reemplaza al grupo: un numero (solo digitos) para las pruebas. */

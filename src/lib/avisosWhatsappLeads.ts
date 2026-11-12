@@ -164,6 +164,12 @@ export function deDondeViene(
   const utm = minus(lead.utmSource);
   const medio = minus(lead.utmMedium);
 
+  // Leads que creó Ali conversando por mensaje privado (aliRedes.ts).
+  if (/- ia$/.test(fuente)) {
+    if (esInstagram(fuente)) return "Conversación con la IA en Instagram";
+    if (esFacebook(fuente)) return "Conversación con la IA en Facebook";
+  }
+
   if (tipoDeLead(lead) === "ANUNCIO") {
     const plataforma = `${utm} ${fuente}`;
     if (esInstagram(utm) || esInstagram(fuente) || plataforma.includes("instagram")) {

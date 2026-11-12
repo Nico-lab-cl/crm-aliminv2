@@ -137,6 +137,34 @@ export async function register() {
     const timerWhatsapp = setInterval(pasadaWhatsapp, CADA_MS);
     timerWhatsapp.unref?.();
 
+    // Ali en Instagram y Facebook (lib/aliRedes.ts): retoma las conversaciones
+    // donde el asesor lleva 2 h sin responder. Con ALI_REDES_ACTIVA apagada la
+    // pasada no hace nada.
+    const { retomarPendientes } = await import("./lib/aliRedes");
+    const timerAliRedes = setInterval(async () => {
+      try {
+        const n = await retomarPendientes();
+        if (n) console.log(`[ali-redes] Retomando ${n} conversaciones sin respuesta del asesor.`);
+      } catch (error) {
+        console.error("[ali-redes] Falló la revisión de conversaciones pendientes:", error);
+      }
+    }, 10 * 60 * 1000);
+    timerAliRedes.unref?.();
+
+    // Token de Instagram (lib/tokenInstagram.ts): se renueva solo antes de
+    // vencer, así nunca expira. Una revisión al arrancar y después cada día.
+    const { renovarTokenInstagram } = await import("./lib/tokenInstagram");
+    const revisarToken = async () => {
+      try {
+        const r = await renovarTokenInstagram();
+        if (r !== "vigente") console.log(`[token-instagram] Revisión: ${r}.`);
+      } catch (error) {
+        console.error("[token-instagram] Falló la revisión:", error);
+      }
+    };
+    setTimeout(revisarToken, 5 * 60 * 1000).unref?.();
+    setInterval(revisarToken, 24 * 60 * 60 * 1000).unref?.();
+
     // Leads del formulario de aliminspa.cl y visitas agendadas.
     //
     // Hasta ahora ningun temporizador los traia: el comentario de

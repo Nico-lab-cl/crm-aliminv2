@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import axios from "axios";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { tokenInstagram } from "@/lib/tokenInstagram";
 
 async function fetchConversations(token: string, igId?: string) {
     // Traemos también attachments{media_url} para las imágenes
@@ -21,7 +22,8 @@ export async function GET(req: Request) {
   }
 
   const PRIMARY_TOKEN = process.env.META_PAGE_ACCESS_TOKEN;
-  const MASTER_KEY_TOKEN = process.env.META_INSTAGRAM_ACCESS_TOKEN;
+  // El renovado automáticamente (lib/tokenInstagram.ts), o el de la variable de entorno.
+  const MASTER_KEY_TOKEN = await tokenInstagram();
 
   try {
     let igAccountId = null;

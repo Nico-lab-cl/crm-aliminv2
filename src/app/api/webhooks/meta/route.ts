@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import prisma from "@/lib/prisma";
-import { loEnvioLaRespuestaAuto, responderAutomatico, type Entrada } from "@/lib/respuestaAutomatica";
+import { loEnvioLaRespuestaAuto } from "@/lib/respuestaAutomatica";
+import { atenderMeta, type AvisoMeta } from "@/lib/aliRedes";
 
 // Configuración de Meta Webhook (Configura estas en tu .env)
 const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
     const body = JSON.parse(crudo);
     // Respuestas automáticas a disparar cuando todo quede guardado. Corren
     // después de devolver el 200, para que Meta no reintente por demora.
-    const pendientes: Entrada[] = [];
+    const pendientes: AvisoMeta[] = [];
 
     if (body.object === "page" || body.object === "instagram") {
       for (const entry of body.entry) {
@@ -72,16 +73,28 @@ export async function POST(req: Request) {
             // Si el objeto es 'instagram' o el ID de entrada coincide con Instagram
             const platform = body.object === "instagram" ? "instagram" : "facebook";
             
-            if (webhookEvent.message && webhookEvent.message.text) {
+            const adjunto = describirAdjunto(webhookEvent.message?.attachments);
+            if (webhookEvent.message && (webhookEvent.message.text || adjunto)) {
               const mid = webhookEvent.message.mid;
               // Ecos de lo que mandó la respuesta automática: ya están guardados.
               if (isEcho && loEnvioLaRespuestaAuto(mid)) continue;
               if (!reclamar(mid) || (await yaGuardado(mid))) continue;
               console.log(`[DIRECT] Full PSID from ${platform}: ${psid}, type: ${senderType}`);
-              const r = await handleIncomingMessage(psid, webhookEvent.message.text, platform, "DIRECT", mid, undefined, undefined, undefined, senderType as "meta" | "advisor");
-              if (!isEcho && r.nueva) {
-                // Solo el primer DM de una conversación nueva.
-                pendientes.push({ conversationId: r.conversationId, plataforma: platform, via: "dm", texto: webhookEvent.message.text, nombre: r.nombre });
+              // Sin texto, el adjunto queda como "[Audio]", "[Imagen]"…: antes se descartaba.
+              const texto = webhookEvent.message.text || adjunto?.texto || "";
+              const r = await handleIncomingMessage(psid, texto, platform, "DIRECT", mid, undefined, undefined, undefined, senderType as "meta" | "advisor", undefined, adjunto?.url || null);
+              if (!isEcho) {
+                // Todos los mensajes del cliente: atenderMeta decide si responde
+                // Ali o la plantilla (que solo contesta el primero con texto).
+                pendientes.push({
+                  conversationId: r.conversationId,
+                  plataforma: platform,
+                  via: "dm",
+                  texto,
+                  nombre: r.nombre,
+                  nueva: r.nueva,
+                  conTexto: Boolean(webhookEvent.message.text),
+                });
               }
             }
           }
@@ -116,7 +129,7 @@ export async function POST(req: Request) {
               } else {
                 console.log(`[COMMENT] FB Post ID: ${postId}, Full PSID: ${psid}, Provided Name: ${providedName}`);
                 const r = await handleIncomingMessage(psid, text, platform, "COMMENT", commentId, postId, postContent, providedName, "meta");
-                pendientes.push({ conversationId: r.conversationId, plataforma: "facebook", via: "comentario", texto: text, nombre: r.nombre, publicacion: textoDe(postContent), commentId });
+                pendientes.push({ conversationId: r.conversationId, plataforma: "facebook", via: "comentario", texto: text, nombre: r.nombre, publicacion: textoDe(postContent), commentId, nueva: r.nueva, conTexto: Boolean(text.trim()) });
               }
             }
             
@@ -146,7 +159,7 @@ export async function POST(req: Request) {
               } else {
                 console.log(`[COMMENT] IG Media ID: ${mediaId}, Full PSID: ${psid}, Provided Name: ${providedName}`);
                 const r = await handleIncomingMessage(psid, text, platform, "COMMENT", commentId, mediaId, postContent, providedName, "meta");
-                pendientes.push({ conversationId: r.conversationId, plataforma: "instagram", via: "comentario", texto: text, nombre: null, publicacion: textoDe(postContent), commentId });
+                pendientes.push({ conversationId: r.conversationId, plataforma: "instagram", via: "comentario", texto: text, nombre: null, publicacion: textoDe(postContent), commentId, nueva: r.nueva, conTexto: Boolean(text.trim()) });
               }
             }
           }
@@ -155,7 +168,7 @@ export async function POST(req: Request) {
       if (pendientes.length) {
         // Uno tras otro: dos avisos de la misma persona no deben cruzarse.
         setImmediate(async () => {
-          for (const p of pendientes) await responderAutomatico(p);
+          for (const p of pendientes) await atenderMeta(p);
         });
       }
       return new Response("EVENT_RECEIVED", { status: 200 });
@@ -218,7 +231,8 @@ async function handleIncomingMessage(
   postContent?: string | null, 
   providedName?: string,
   senderType: "meta" | "advisor" = "meta",
-  overrideConversationId?: string
+  overrideConversationId?: string,
+  mediaUrl: string | null = null
 ) {
   let conversationId = overrideConversationId;
   let nueva = false;
@@ -288,6 +302,7 @@ async function handleIncomingMessage(
       sourceId,
       postId,
       postContent,
+      mediaUrl,
     }
   });
 
@@ -321,6 +336,17 @@ async function yaGuardado(sourceId?: string | null) {
   if (!sourceId) return false;
   const m = await (prisma as any).message.findFirst({ where: { sourceId }, select: { id: true } });
   return Boolean(m);
+}
+
+/**
+ * Adjuntos de un DM (audio, foto, video). Se guarda el primero como texto
+ * entre corchetes y su URL de Meta, para que el asesor y Ali sepan que llegó.
+ */
+function describirAdjunto(adjuntos?: Array<{ type?: string; payload?: { url?: string } }>) {
+  const a = adjuntos?.[0];
+  if (!a) return null;
+  const textos: Record<string, string> = { audio: "[Audio]", image: "[Imagen]", video: "[Video]", file: "[Archivo]" };
+  return { texto: textos[a.type || ""] || "[Adjunto]", url: a.payload?.url || null };
 }
 
 function textoDe(postContent?: string | null) {

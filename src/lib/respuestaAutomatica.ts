@@ -1,5 +1,6 @@
 import prisma from "./prisma";
 import { reportarUsoIA } from "./usoIA";
+import { tokenInstagram } from "./tokenInstagram";
 
 /**
  * Respuesta automática de Instagram y Facebook.
@@ -47,7 +48,7 @@ export function respuestaAutoActiva() {
  * está guardado como "ali", así que esos avisos se ignoran. Se recuerdan acá
  * porque el webhook puede llegar antes de que termine de guardarse. */
 const enviados = new Set<string>();
-function recordar(id?: string | null) {
+export function recordar(id?: string | null) {
   if (!id) return;
   enviados.add(id);
   setTimeout(() => enviados.delete(id), 10 * 60 * 1000).unref?.();
@@ -144,7 +145,7 @@ export async function clasificar(
 
 /* ── Plantillas ────────────────────────────────────────────────────── */
 
-const PUBLICAS = [
+export const PUBLICAS = [
   "¡Hola! Te mandamos la info por mensaje privado 📩",
   "¡Gracias por comentar! Revisa tus mensajes, ahí te dejamos todo 😊",
   "¡Hola! Te escribimos por interno con toda la información 📩",
@@ -237,7 +238,7 @@ const NOMBRE_CATEGORIA: Record<Categoria, string> = {
 
 /* ── Envío por Graph API ───────────────────────────────────────────── */
 
-async function graph(path: string, body: unknown, base = GRAPH, token = process.env.META_PAGE_ACCESS_TOKEN as string) {
+export async function graph(path: string, body: unknown, base = GRAPH, token = process.env.META_PAGE_ACCESS_TOKEN as string) {
   const r = await fetch(`${base}${path}?access_token=${encodeURIComponent(token)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -256,7 +257,7 @@ async function graph(path: string, body: unknown, base = GRAPH, token = process.
 /** ¿Ya se le respondió hace poco o ya lo atiende un asesor? */
 /** PSID de cuentas de prueba (RESPUESTA_AUTO_PRUEBA, separados por coma):
  * se les responde siempre, sin el límite de una respuesta cada 7 días. */
-async function esCuentaDePrueba(conversationId: string) {
+export async function esCuentaDePrueba(conversationId: string) {
   const lista = (process.env.RESPUESTA_AUTO_PRUEBA || "").split(",").map((s) => s.trim()).filter(Boolean);
   if (!lista.length) return false;
   // Vale el PSID o el comienzo del id de la conversación (el que se ve en la
@@ -282,7 +283,7 @@ async function yaAtendida(conversationId: string) {
   return Boolean(previo);
 }
 
-async function guardar(conversationId: string, text: string, sourceId?: string | null, sourceType = AUTO_SOURCE) {
+export async function guardar(conversationId: string, text: string, sourceId?: string | null, sourceType = AUTO_SOURCE) {
   await (prisma as any).message.create({
     data: { conversationId, text, senderType: ALI_SENDER, sourceType, sourceId: sourceId || null },
   });
@@ -358,35 +359,8 @@ export async function responderAutomatico(e: Entrada) {
       conversationId = await unirConChat(e.conversationId, privado.recipient_id);
       await guardar(conversationId, p.texto, privado.message_id);
 
-      // 2. Respuesta pública bajo el comentario. En Instagram se prueba primero
-      //    el token de inicio de sesión de Instagram (IGAA…) y después el de la
-      //    página; si ninguno puede, el error de Meta queda como nota en la
-      //    conversación para verlo sin abrir los logs.
-      const intentos: Array<() => Promise<any>> =
-        e.plataforma === "instagram"
-          ? [
-              ...(process.env.META_INSTAGRAM_ACCESS_TOKEN
-                ? [() => graph(`/${e.commentId}/replies`, { message: p.publica }, "https://graph.instagram.com/v21.0", process.env.META_INSTAGRAM_ACCESS_TOKEN as string)]
-                : []),
-              () => graph(`/${e.commentId}/replies`, { message: p.publica }),
-            ]
-          : [() => graph(`/${e.commentId}/comments`, { message: p.publica })];
-      const errores: string[] = [];
-      for (const intento of intentos) {
-        try {
-          const pub = await intento();
-          recordar(pub.id);
-          await guardar(conversationId, `(Respuesta pública al comentario) ${p.publica}`, pub.id);
-          errores.length = 0;
-          break;
-        } catch (error) {
-          errores.push(error instanceof Error ? error.message : String(error));
-        }
-      }
-      if (errores.length) {
-        console.error("[auto] No se pudo responder en público:", errores.join(" | "));
-        await anotar(conversationId, `No se pudo responder en público el comentario: ${errores.join(" | ")}`.slice(0, 500));
-      }
+      // 2. Respuesta pública bajo el comentario.
+      await responderEnPublico(e.commentId, e.plataforma, conversationId, p.publica);
     } else {
       // DM: la ventana de 24 h está abierta porque la persona acaba de escribir.
       const psid = await psidDe(conversationId);
@@ -418,7 +392,45 @@ export async function responderAutomatico(e: Entrada) {
   }
 }
 
-async function psidDe(conversationId: string): Promise<string | null> {
+/**
+ * Respuesta pública bajo un comentario. En Instagram se prueba primero el token
+ * de inicio de sesión de Instagram (IGAA…) y después el de la página; si
+ * ninguno puede, el error de Meta queda como nota en la conversación para verlo
+ * sin abrir los logs. Nunca lanza.
+ */
+export async function responderEnPublico(
+  commentId: string,
+  plataforma: "instagram" | "facebook",
+  conversationId: string,
+  texto = PUBLICAS[Math.floor(Math.random() * PUBLICAS.length)]
+) {
+  const tokenIg = plataforma === "instagram" ? await tokenInstagram() : null;
+  const intentos: Array<() => Promise<any>> =
+    plataforma === "instagram"
+      ? [
+          ...(tokenIg
+            ? [() => graph(`/${commentId}/replies`, { message: texto }, "https://graph.instagram.com/v21.0", tokenIg)]
+            : []),
+          () => graph(`/${commentId}/replies`, { message: texto }),
+        ]
+      : [() => graph(`/${commentId}/comments`, { message: texto })];
+  const errores: string[] = [];
+  for (const intento of intentos) {
+    try {
+      const pub = await intento();
+      recordar(pub.id);
+      await guardar(conversationId, `(Respuesta pública al comentario) ${texto}`, pub.id);
+      return true;
+    } catch (error) {
+      errores.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  console.error("[auto] No se pudo responder en público:", errores.join(" | "));
+  await anotar(conversationId, `No se pudo responder en público el comentario: ${errores.join(" | ")}`.slice(0, 500)).catch(() => {});
+  return false;
+}
+
+export async function psidDe(conversationId: string): Promise<string | null> {
   const c = await (prisma as any).conversation.findUnique({ where: { id: conversationId }, select: { psid: true } });
   return c?.psid || null;
 }
@@ -428,7 +440,7 @@ async function psidDe(conversationId: string): Promise<string | null> {
  * junta todo en una sola conversación para que el asesor vea el comentario y
  * el chat juntos y su respuesta vaya por DM.
  */
-async function unirConChat(conversationId: string, recipientId?: string | null): Promise<string> {
+export async function unirConChat(conversationId: string, recipientId?: string | null): Promise<string> {
   if (!recipientId) return conversationId;
   const actual = await (prisma as any).conversation.findUnique({ where: { id: conversationId } });
   if (!actual || actual.psid === recipientId) return conversationId;
