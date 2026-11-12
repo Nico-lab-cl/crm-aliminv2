@@ -24,6 +24,11 @@ export const ALI_NOMBRE = "Ali";
 /** sourceType del mensaje de Ali que pide un asesor. */
 export const HANDOFF_SOURCE = "HANDOFF";
 
+/** Dueño de los leads que crea Ali en redes mientras ella los atiende: Nicolás (12-11-2026). */
+export const DUENO_MIENTRAS_ALI = "initial-admin-id";
+/** Fuente de los leads que crea Ali en Instagram y Facebook (ver lib/aliRedes.ts). */
+export const FUENTES_IA = ["Instagram - IA", "Facebook - IA"];
+
 export interface EstadoAli {
   /** Ningún asesor escribió todavía: Ali responde. */
   activa: boolean;
