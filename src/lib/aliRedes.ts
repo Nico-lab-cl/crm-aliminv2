@@ -1,7 +1,7 @@
 import prisma from "./prisma";
 import { BARBARA_ID, MARCELA_ID, ORLANDO_ID, getNextAdvisorId } from "./assignment";
 import { createNotification } from "./notifications";
-import { ALI_SENDER, HANDOFF_SOURCE, avisarDerivacion } from "./ali";
+import { ALI_SENDER, DUENO_MIENTRAS_ALI, FUENTES_IA, HANDOFF_SOURCE, avisarDerivacion } from "./ali";
 import { enviarAlGrupo } from "./avisosWhatsappLeads";
 import {
   AUTO_SOURCE,
@@ -45,11 +45,11 @@ const ESPERA_ASESOR_MS = 2 * 60 * 60 * 1000;
 const DIAS_ENTRE_COMENTARIOS = 7;
 const TIMEOUT_SITIO_MS = 60_000;
 
-/** Dueño de los leads que crea Ali mientras ella los atiende: Nicolás (12-11-2026). */
-export const DUENO_MIENTRAS_ALI = "initial-admin-id";
+// DUENO_MIENTRAS_ALI y FUENTES_IA viven en lib/ali.ts porque la bandeja del
+// CRM también los usa (filtroBandeja); se reexportan para no romper imports.
+export { DUENO_MIENTRAS_ALI };
 /** Lead score (public.lead_score, lo calcula el CRM web) desde el que el lead pasa a un asesor. */
 export const PUNTAJE_PARA_ASESOR = 28;
-const FUENTES_IA = ["Instagram - IA", "Facebook - IA"];
 
 export type ModoAliRedes = "apagada" | "prueba" | "todos";
 
@@ -221,9 +221,14 @@ async function responder(a: AvisoMeta) {
   const ahora = Date.now();
   if (ahora - ultimo.createdAt.getTime() > VENTANA_META_MS) return;
 
-  // Asesor atendiendo: Ali solo entra si el cliente lleva 2 h sin respuesta.
-  const ultimoAsesor = [...conversacion].reverse().find((m) => m.senderType === "advisor");
-  if (ultimoAsesor && ahora - ultimo.createdAt.getTime() < ESPERA_ASESOR_MS) {
+  // Asesor atendiendo: lo último que salió de nuestro lado es de un asesor y
+  // lo escribió hace menos de 2 h. Ahí Ali espera (retoma si el cliente pasa
+  // 2 h sin respuesta). Un mensaje de asesor más viejo, o uno al que Ali ya le
+  // siguió, no la calla: Ali atiende sola (Nicolás, 12-11-2026).
+  const ultimoNuestro = [...conversacion].reverse().find((m) => m.senderType === "advisor" || m.senderType === ALI_SENDER);
+  const asesorActivo =
+    ultimoNuestro?.senderType === "advisor" && ahora - ultimoNuestro.createdAt.getTime() < ESPERA_ASESOR_MS;
+  if (asesorActivo && ahora - ultimo.createdAt.getTime() < ESPERA_ASESOR_MS) {
     console.log(`[ali-redes] ${conv.id}: lo atiende un asesor; Ali retoma solo si pasan 2 h sin respuesta.`);
     return;
   }
