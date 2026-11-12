@@ -247,7 +247,17 @@ async function responder(a: AvisoMeta) {
   }
 
   type MensajeIA = { de: "cliente" | "ali" | "asesor"; texto: string; imagenUrl?: string | null };
-  const mensajes: MensajeIA[] = conversacion.slice(-40).flatMap((m): MensajeIA[] => {
+  // Solo la conversación actual: desde el último silencio de más de 24 h. Lo
+  // anterior (un comentario de hace días ya respondido con el brochure) hacía
+  // que Ali contestara preguntas viejas (prueba del 12-11-2026).
+  let inicioSesion = 0;
+  for (let i = conversacion.length - 1; i > 0; i--) {
+    if (conversacion[i].createdAt.getTime() - conversacion[i - 1].createdAt.getTime() > VENTANA_META_MS) {
+      inicioSesion = i;
+      break;
+    }
+  }
+  const mensajes: MensajeIA[] = conversacion.slice(inicioSesion).slice(-40).flatMap((m): MensajeIA[] => {
     if (m.senderType === "meta") {
       const esImagen = /^\[imagen\]$/i.test(m.text);
       const texto = m.sourceType === "COMMENT" ? `(Comentó en la publicación) ${m.text}` : m.text;
