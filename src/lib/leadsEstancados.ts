@@ -2,6 +2,7 @@ import prisma from "./prisma";
 import { MARCELA_ID, ORLANDO_ID, BARBARA_ID } from "./assignment";
 import { avisar, leerConfig } from "./avisosWhatsappLeads";
 import { ahoraEnChile, fechaCorta, inicioDelDiaEnChile } from "./resumenesWhatsapp";
+import { RESULTADO_IA } from "./memoriaLead";
 
 /**
  * Leads estancados en "Contactado" (pedido de Nicolás, 04-11-2026).
@@ -50,13 +51,15 @@ export async function leadsEstancados(): Promise<Estancado[]> {
       FROM "Lead" l
      WHERE upper(COALESCE(l.status, '')) = 'CONTACTADO'
        AND l."assignedToId" = ANY(${Object.keys(ASESORES)})
-       AND l."createdAt" > now() - make_interval(days => ${VENTANA_DIAS})
-       AND COALESCE(l."etapaDesde", l."createdAt") < now() - make_interval(days => ${DIAS_ESTANCADO})
+       AND l."createdAt" > now() - make_interval(days => ${VENTANA_DIAS}::int)
+       AND COALESCE(l."etapaDesde", l."createdAt") < now() - make_interval(days => ${DIAS_ESTANCADO}::int)
        AND (l."proximaAccionAt" IS NULL OR l."proximaAccionAt" < now())
-       AND COALESCE(l."lastNoteAt", l."createdAt") < now() - make_interval(days => ${DIAS_ESTANCADO})
+       AND COALESCE(l."lastNoteAt", l."createdAt") < now() - make_interval(days => ${DIAS_ESTANCADO}::int)
        AND NOT EXISTS (
+         -- Las notas del calificador IA no cuentan: no son seguimiento de un asesor.
          SELECT 1 FROM lead_seguimientos s
-          WHERE s.lead_id = l.id AND s.created_at > now() - make_interval(days => ${DIAS_ESTANCADO}))
+          WHERE s.lead_id = l.id AND COALESCE(s.resultado, '') <> ${RESULTADO_IA}
+            AND s.created_at > now() - make_interval(days => ${DIAS_ESTANCADO}::int))
      ORDER BY desde ASC`;
 }
 

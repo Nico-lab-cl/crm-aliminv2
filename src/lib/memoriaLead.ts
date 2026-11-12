@@ -33,6 +33,53 @@ const corto = (t: string | null | undefined, max = MAX_TEXTO_MENSAJE) => {
   return limpio.length > max ? `${limpio.slice(0, max)}…` : limpio;
 };
 
+/** Marca de las notas del calificador IA en lead_seguimientos (ver calificador_ia.ts del CRM web). */
+export const RESULTADO_IA = "IA";
+
+const TEXTO_CAMPO: Record<string, Record<string, string>> = {
+  forma_pago: { contado: "al contado", credito_directo: "con crédito directo" },
+  plazo_compra: { menos_de_3_meses: "en menos de 3 meses", "3_a_12_meses": "en 3 a 12 meses", mas_de_un_ano: "en más de un año" },
+  uso: { vivir: "para vivir", veraneo: "para veranear", inversion: "como inversión" },
+};
+
+/**
+ * La calificación más nueva del calificador IA, que vive en la base del CRM
+ * web: se pide por su webhook con IA_SECRET. Si el CRM web no responde en 3 s,
+ * Ali sigue sin esta parte.
+ */
+async function calificacionDelCrmWeb(leadId: string | null, conversationId: string): Promise<string | null> {
+  if (!process.env.IA_SECRET) return null;
+  try {
+    const base = (process.env.CRM_WEB_URL || "https://marketing.aliminspa.cl").replace(/\/+$/, "");
+    const params = new URLSearchParams(leadId ? { lead_id: leadId } : { conversacion_id: conversationId });
+    const res = await fetch(`${base}/api/webhooks/ia/calificacion?${params}`, {
+      headers: { "x-ia-secret": process.env.IA_SECRET },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    const { calificaciones } = (await res.json()) as { calificaciones?: any[] };
+    const c = calificaciones?.[0];
+    if (!c) return null;
+    const dato = (campo: string, v: unknown) => (typeof v === "string" ? TEXTO_CAMPO[campo]?.[v] : null);
+    const lineasCalif = [
+      c.proyecto ? `Le interesa ${c.proyecto}.` : null,
+      c.tiene_pie === true ? `Tiene pie${c.pie_monto ? ` (unos $${Number(c.pie_monto).toLocaleString("es-CL")})` : ""}.` : null,
+      c.tiene_pie === false ? "Dijo que no tiene pie." : null,
+      dato("forma_pago", c.forma_pago) ? `Compraría ${dato("forma_pago", c.forma_pago)}.` : null,
+      dato("plazo_compra", c.plazo_compra) ? `Piensa comprar ${dato("plazo_compra", c.plazo_compra)}.` : null,
+      dato("uso", c.uso) ? `Lo quiere ${dato("uso", c.uso)}.` : null,
+      c.quiere_visitar === true ? "Quiere visitar." : c.quiere_visitar === false ? "Dijo que no quiere visitar por ahora." : null,
+      Array.isArray(c.objeciones) && c.objeciones.length ? `Objeciones: ${c.objeciones.join(", ")}.` : null,
+      c.categoria ? `Categoría: ${c.categoria}.` : null,
+      c.resumen ? `Resumen: ${corto(c.resumen, 400)}` : null,
+    ].filter(Boolean);
+    return lineasCalif.length ? lineasCalif.join("\n") : null;
+  } catch (error) {
+    console.error("[memoria] No se pudo leer la calificación del CRM web:", error);
+    return null;
+  }
+}
+
 function quien(m: MensajeMemoria) {
   if (m.senderType === "meta" || m.senderType === "visitor") return "Cliente";
   if (m.senderType === "ali") return m.sourceType === "AUTO" ? "Mensaje automático" : "Ali";
@@ -131,7 +178,8 @@ export async function memoriaDelLead(conversationId: string, anteriores: Mensaje
         UNION ALL
         SELECT s.created_at, coalesce(s.tipo, 'Seguimiento'),
                concat_ws(' · ', s.resultado, s.nota)
-          FROM lead_seguimientos s WHERE s.lead_id = ${lead.id}
+          FROM lead_seguimientos s
+         WHERE s.lead_id = ${lead.id} AND COALESCE(s.resultado, '') <> ${RESULTADO_IA}
       ) e ORDER BY fecha DESC LIMIT 8`.catch(() => []);
     if (eventos.length) {
       secciones.push(
@@ -147,6 +195,10 @@ export async function memoriaDelLead(conversationId: string, anteriores: Mensaje
       SELECT score, banda FROM public.lead_score WHERE lead_id = ${lead.id} LIMIT 1`.catch(() => []);
     if (puntaje[0]) secciones.push(`## Lead score\n${puntaje[0].score} puntos (${puntaje[0].banda}).`);
   }
+
+  // Lo que entendió el calificador IA (Sonnet, CRM web) de sus conversaciones.
+  const calificacion = await calificacionDelCrmWeb(lead?.id ?? null, conversationId);
+  if (calificacion) secciones.push(`## Lo que ya sabemos de sus conversaciones (calificador IA)\n${calificacion}`);
 
   // Conversaciones: lo que habló antes en esta misma conversación (antes del
   // último silencio de 24 h) y por otros canales. Van después de la ficha y,
