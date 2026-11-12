@@ -9,6 +9,7 @@ import {
   conversacionDelVisitante,
   estadoAli,
 } from "@/lib/ali";
+import { memoriaDelLead } from "@/lib/memoriaLead";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,12 @@ export async function GET(req: Request) {
 
     const contexto = await contextoParaAli(conversation.id);
     const lead = conversation.lead;
+    // Lo que el CRM sabe de la persona antes de este chat: ficha del lead,
+    // movimientos y lo que habló por Instagram o Facebook (lib/memoriaLead.ts).
+    const memoria = await memoriaDelLead(conversation.id, []).catch((error) => {
+      console.error("[web-chat/ali] No se pudo armar la memoria:", error);
+      return null;
+    });
 
     return NextResponse.json({
       ...contexto,
@@ -51,6 +58,7 @@ export async function GET(req: Request) {
         interes: lead?.interests || null,
       },
       asesorAsignado: lead?.assignedTo?.name || null,
+      memoria,
     });
   } catch (error) {
     console.error("[web-chat/ali] Error armando el contexto:", error);

@@ -3,6 +3,7 @@ import { BARBARA_ID, MARCELA_ID, ORLANDO_ID, getNextAdvisorId } from "./assignme
 import { createNotification } from "./notifications";
 import { ALI_SENDER, DUENO_MIENTRAS_ALI, FUENTES_IA, HANDOFF_SOURCE, avisarDerivacion } from "./ali";
 import { enviarAlGrupo } from "./avisosWhatsappLeads";
+import { memoriaDelLead } from "./memoriaLead";
 import {
   AUTO_SOURCE,
   EVENTO_SOURCE,
@@ -281,6 +282,12 @@ async function responder(a: AvisoMeta) {
   const lead = conv.lead;
   const nombreLead = [lead?.firstName, lead?.lastName].filter(Boolean).join(" ") || null;
   const publicacion = a.publicacion || null;
+  // Lo anterior al corte no se pierde: va como memoria (ficha del lead, sus
+  // movimientos y lo que habló antes aquí y en otros canales).
+  const memoria = await memoriaDelLead(conv.id, conversacion.slice(0, inicioSesion)).catch((error) => {
+    console.error(`[ali-redes] No se pudo armar la memoria de ${conv.id}:`, error);
+    return null;
+  });
 
   const inicio = new Date();
   let r: RespuestaSitio;
@@ -292,6 +299,7 @@ async function responder(a: AvisoMeta) {
       publicacion,
       cliente: { nombre: nombreLead, telefono: lead?.phone || null, email: lead?.email || null },
       mensajes,
+      memoria,
     });
   } catch (error) {
     console.error(`[ali-redes] El sitio no respondió para ${conv.id}:`, error);
