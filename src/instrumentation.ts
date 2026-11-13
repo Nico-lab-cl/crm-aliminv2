@@ -159,6 +159,19 @@ export async function register() {
     }, 10 * 60 * 1000);
     timerAliRedes.unref?.();
 
+    // ¿Llegó a la visita? (lib/visitaRealizada.ts): push al asesor 2 h
+    // después de la hora de la visita para que lo marque. Una vez por visita.
+    const { preguntarVisitasPasadas } = await import("./lib/visitaRealizada");
+    const timerVisitas = setInterval(async () => {
+      try {
+        const n = await preguntarVisitasPasadas();
+        if (n) console.log(`[visitas] Se preguntó a los asesores por ${n} visitas pasadas.`);
+      } catch (error) {
+        console.error("[visitas] Falló la revisión de visitas pasadas:", error);
+      }
+    }, 10 * 60 * 1000);
+    timerVisitas.unref?.();
+
     // Token de Instagram (lib/tokenInstagram.ts): se renueva solo antes de
     // vencer, así nunca expira. Una revisión al arrancar y después cada día.
     const { renovarTokenInstagram } = await import("./lib/tokenInstagram");

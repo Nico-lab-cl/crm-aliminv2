@@ -1,5 +1,6 @@
 import prisma from "./prisma";
 import { ESTADOS_CLIENTE, canonico, nombreEstado } from "./pipelineEtapas";
+import { estadoDeVisita } from "./visitaRealizada";
 
 /**
  * Memoria de Ali: lo que el CRM sabe de la persona antes de esta conversación.
@@ -147,6 +148,15 @@ export async function memoriaDelLead(conversationId: string, anteriores: Mensaje
 
   if (lead) {
     const estado = canonico(lead.status);
+    // "visited" se marca al AGENDAR: si llegó o no lo dice visitaRealizada.ts.
+    const visita = lead.visitDate ? await estadoDeVisita(lead.id).catch(() => null) : null;
+    const TEXTO_VISITA: Record<string, string> = {
+      agendada: "Visita agendada",
+      por_marcar: "Tenía visita (todavía no se sabe si llegó)",
+      llego: "Visita realizada (llegó)",
+      asumida: "Visita realizada (se asume que llegó)",
+      no_llego: "Tenía visita y NO llegó",
+    };
     const ficha = [
       `Lead desde el ${dia(lead.createdAt)}${lead.source ? `, origen ${lead.source}` : ""}.`,
       `Etapa del pipeline: ${nombreEstado(lead.status)}${lead.etapaDesde ? ` (desde el ${dia(lead.etapaDesde)})` : ""}.`,
@@ -158,8 +168,8 @@ export async function memoriaDelLead(conversationId: string, anteriores: Mensaje
       lead.pie ? `Pie que dijo tener: ${corto(lead.pie, 60)}.` : null,
       lead.monthlyPayment ? `Cuota que puede pagar: ${corto(lead.monthlyPayment, 60)}.` : null,
       lead.creditInterest ? `Interés en crédito: ${corto(lead.creditInterest, 60)}.` : null,
-      lead.bookingId || lead.visitDate
-        ? `Visita ${lead.visited ? "realizada" : "agendada"}${lead.visitProject ? ` a ${lead.visitProject}` : ""}${lead.visitDate ? ` el ${fecha(lead.visitDate)}` : ""}.`
+      lead.visitDate && visita
+        ? `${TEXTO_VISITA[visita.estado] || "Visita agendada"}${lead.visitProject ? ` a ${lead.visitProject}` : ""} el ${fecha(lead.visitDate)}.`
         : null,
       lead.lote ? `Lote de interés: ${corto(lead.lote, 40)}${lead.etapa ? `, etapa ${corto(lead.etapa, 20)}` : ""}.` : null,
       lead.signingStatus ? `Firma: ${corto(lead.signingStatus, 40)}${lead.signingProject ? ` (${lead.signingProject})` : ""}.` : null,

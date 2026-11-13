@@ -9,6 +9,7 @@ import {
   ChevronDown, UserCheck, PenTool, X, FileCheck, CheckCircle2, Clock
 } from "lucide-react";
 import HistorialLead from "@/components/pipeline/HistorialLead";
+import VisitaResultado from "@/components/pipeline/VisitaResultado";
 import { getAdVideoUrl } from "@/lib/adVideos";
 import { getAdImages } from "@/lib/adImages";
 import { useRouter } from "next/navigation";
@@ -374,6 +375,9 @@ export default function LeadDetailPage({ params }: { params: { id: string } }) {
           onClick={() => handleInteraction("EMAIL")}
         />
       </div>
+
+      {/* ¿Llegó a la visita? Aparece cuando ya pasó la hora (lib/visitaRealizada.ts) */}
+      <VisitaResultado leadId={lead.id} />
 
       {/* Marca de contacto: es lo que apaga los recordatorios de seguimiento */}
       <div className="px-4 mb-6">
