@@ -162,12 +162,21 @@ export async function register() {
     // ¿Llegó a la visita? (lib/visitaRealizada.ts): push al asesor 2 h
     // después de la hora de la visita para que lo marque. Una vez por visita.
     const { preguntarVisitasPasadas } = await import("./lib/visitaRealizada");
+    // Lead con asesor que la IA marcó como calificado (lib/avisoCalificadoIA.ts):
+    // push al asesor y aviso al grupo, una vez por lead cada 7 días.
+    const { avisarCalificadosIA } = await import("./lib/avisoCalificadoIA");
     const timerVisitas = setInterval(async () => {
       try {
         const n = await preguntarVisitasPasadas();
         if (n) console.log(`[visitas] Se preguntó a los asesores por ${n} visitas pasadas.`);
       } catch (error) {
         console.error("[visitas] Falló la revisión de visitas pasadas:", error);
+      }
+      try {
+        const n = await avisarCalificadosIA();
+        if (n) console.log(`[ia-calificado] Se avisó por ${n} leads calificados por la IA.`);
+      } catch (error) {
+        console.error("[ia-calificado] Falló el aviso de leads calificados:", error);
       }
     }, 10 * 60 * 1000);
     timerVisitas.unref?.();

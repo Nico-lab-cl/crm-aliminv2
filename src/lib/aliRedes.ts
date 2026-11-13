@@ -621,7 +621,7 @@ export async function pasarAlAsesor(leadId: string, motivo: string, resumen?: st
 }
 
 /** Aviso al grupo de leads de los asesores. */
-async function avisarAlGrupo(texto: string) {
+export async function avisarAlGrupo(texto: string) {
   const url = process.env.EVOLUTION_API_URL?.replace(/\/+$/, "");
   const apiKey = process.env.EVOLUTION_API_KEY;
   const grupo = process.env.LEADS_WHATSAPP_GROUP;
