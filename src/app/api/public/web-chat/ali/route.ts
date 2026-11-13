@@ -10,6 +10,7 @@ import {
   estadoAli,
 } from "@/lib/ali";
 import { memoriaDelLead } from "@/lib/memoriaLead";
+import { agenteParaLead } from "@/lib/agenteIA";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,8 @@ export async function GET(req: Request) {
       },
       asesorAsignado: lead?.assignedTo?.name || null,
       memoria,
+      // Ali o Cierre según la etapa del lead (lib/agenteIA.ts).
+      agente: await agenteParaLead(conversation.leadId),
     });
   } catch (error) {
     console.error("[web-chat/ali] Error armando el contexto:", error);

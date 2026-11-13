@@ -4,6 +4,7 @@ import { createNotification } from "./notifications";
 import { ALI_SENDER, DUENO_MIENTRAS_ALI, FUENTES_IA, HANDOFF_SOURCE, avisarDerivacion } from "./ali";
 import { enviarAlGrupo } from "./avisosWhatsappLeads";
 import { memoriaDelLead } from "./memoriaLead";
+import { agenteParaLead } from "./agenteIA";
 import {
   AUTO_SOURCE,
   EVENTO_SOURCE,
@@ -288,6 +289,8 @@ async function responder(a: AvisoMeta) {
     console.error(`[ali-redes] No se pudo armar la memoria de ${conv.id}:`, error);
     return null;
   });
+  // Ali o Cierre según la etapa del lead (agenteIA.ts).
+  const agente = await agenteParaLead(conv.leadId);
 
   const inicio = new Date();
   let r: RespuestaSitio;
@@ -300,6 +303,7 @@ async function responder(a: AvisoMeta) {
       cliente: { nombre: nombreLead, telefono: lead?.phone || null, email: lead?.email || null },
       mensajes,
       memoria,
+      agente,
     });
   } catch (error) {
     console.error(`[ali-redes] El sitio no respondió para ${conv.id}:`, error);
