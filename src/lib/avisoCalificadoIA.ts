@@ -2,6 +2,7 @@ import prisma from "./prisma";
 import { createNotification } from "./notifications";
 import { DUENO_MIENTRAS_ALI } from "./ali";
 import { avisarAlGrupo } from "./aliRedes";
+import { oficinaDice } from "./oficina";
 import { ETAPAS_CERRADAS, canonico } from "./pipelineEtapas";
 
 /**
@@ -80,6 +81,7 @@ export async function avisarCalificadosIA() {
         .filter((l) => l !== null)
         .join("\n")
     );
+    oficinaDice("calificador", "Avisé a su asesor: lead calificado");
     n++;
   }
   return n;

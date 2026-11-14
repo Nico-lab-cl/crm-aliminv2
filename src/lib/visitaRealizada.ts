@@ -1,6 +1,7 @@
 import prisma from "./prisma";
 import { createNotification } from "./notifications";
 import { registrarSeguimiento } from "./pipeline";
+import { oficinaDice } from "./oficina";
 
 /**
  * ¿La persona llegó a la visita? (Nicolás, 12-11-2026)
@@ -78,6 +79,8 @@ export async function marcarVisita(leadId: string, usuario: { id: string; role?:
     resultado: llego ? RESULTADO_LLEGO : RESULTADO_NO_LLEGO,
     nota: [visita.proyecto, cuando ? `visita del ${cuando}` : null].filter(Boolean).join(", ") || null,
   });
+  if (llego) oficinaDice("cierre", `¡Llegó a la visita${visita.proyecto ? ` a ${visita.proyecto}` : ""}! Me toca`);
+  else oficinaDice("ali", "No llegó a la visita: lo intento reagendar");
   return estadoDeVisita(leadId);
 }
 

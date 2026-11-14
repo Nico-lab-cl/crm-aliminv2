@@ -5,6 +5,7 @@ import { ALI_SENDER, DUENO_MIENTRAS_ALI, FUENTES_IA, HANDOFF_SOURCE, avisarDeriv
 import { enviarAlGrupo } from "./avisosWhatsappLeads";
 import { memoriaDelLead } from "./memoriaLead";
 import { agenteParaLead } from "./agenteIA";
+import { oficinaDice } from "./oficina";
 import {
   AUTO_SOURCE,
   EVENTO_SOURCE,
@@ -617,6 +618,7 @@ export async function pasarAlAsesor(leadId: string, motivo: string, resumen?: st
         .join("\n")
     );
     console.log(`[ali-redes] Lead ${leadId} pasó a ${asesor?.name || asesorId}: ${motivo}`);
+    oficinaDice("ali", `Pasé un lead de ${red} a un asesor`);
     return true;
   } catch (error) {
     console.error(`[ali-redes] No se pudo pasar el lead ${leadId} al asesor:`, error);
