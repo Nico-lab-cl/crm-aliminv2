@@ -12,26 +12,28 @@ import { registrarSeguimiento } from "./pipeline";
  *
  * El asesor lo marca en la ficha con "Llegó" o "No llegó". Queda como
  * seguimiento de tipo VISITA en lead_seguimientos (no hace falta columna
- * nueva). Si en 24 h después de la hora de la visita no marcó nada, se asume
- * que llegó.
+ * nueva). Sin marca NO se asume nada (Nicolás, 14-11-2026: "mejor que no
+ * asuma"): la IA de Cierre y los correos post-visita solo toman a quien el
+ * asesor marcó "Llegó". Por eso el push se repite una vez si no marca.
  */
 
 export const RESULTADO_LLEGO = "Llegó a la visita";
 export const RESULTADO_NO_LLEGO = "No llegó a la visita";
-/** Sin marca en este rato después de la hora de la visita, se asume que llegó. */
-const HORAS_PARA_ASUMIR = 24;
-/** El push para marcarlo sale este rato después de la hora de la visita. */
+/** El primer push para marcarlo sale este rato después de la hora de la visita. */
 const HORAS_PARA_PREGUNTAR = 2;
+/** Si sigue sin marcar, el segundo push sale a este rato de la visita. */
+const HORAS_SEGUNDO_AVISO = 24;
+/** Después de esto ya no se insiste. */
+const HORAS_DEJAR_DE_PREGUNTAR = 72;
 /** Una marca cuenta para la visita si se hizo desde este rato antes de su hora (por si la marcan al llegar). */
 const MARGEN_ANTES_HORAS = 3;
 
 export type EstadoVisita =
   | "sin_visita" // nunca agendó
   | "agendada" // la visita todavía no ocurre
-  | "por_marcar" // ya pasó la hora y el asesor no marcó (todavía no se asume)
+  | "por_marcar" // ya pasó la hora y el asesor no marcó
   | "llego"
-  | "no_llego"
-  | "asumida"; // pasaron 24 h sin marca: se asume que llegó
+  | "no_llego";
 
 export interface Visita {
   estado: EstadoVisita;
@@ -39,8 +41,8 @@ export interface Visita {
   proyecto: string | null;
 }
 
-/** Llegó o se asume que llegó. */
-export const visitaRealizada = (v: Visita) => v.estado === "llego" || v.estado === "asumida";
+/** Solo si el asesor marcó que llegó. */
+export const visitaRealizada = (v: Visita) => v.estado === "llego";
 
 export async function estadoDeVisita(leadId: string): Promise<Visita> {
   const lead = await prisma.lead.findUnique({
@@ -62,9 +64,7 @@ export async function estadoDeVisita(leadId: string): Promise<Visita> {
        AND created_at >= ${desde}
      ORDER BY created_at DESC LIMIT 1`;
   if (marcas[0]) return { estado: marcas[0].resultado === RESULTADO_LLEGO ? "llego" : "no_llego", ...base };
-
-  const horas = (ahora - fecha.getTime()) / (60 * 60 * 1000);
-  return { estado: horas >= HORAS_PARA_ASUMIR ? "asumida" : "por_marcar", ...base };
+  return { estado: "por_marcar", ...base };
 }
 
 /** El asesor marca si llegó. Queda en el historial a su nombre. */
@@ -83,7 +83,9 @@ export async function marcarVisita(leadId: string, usuario: { id: string; role?:
 
 /**
  * Push al asesor 2 h después de la hora de la visita para que marque si
- * llegó. Una vez por visita (se revisa en Notification). Corre cada 10 min.
+ * llegó, y uno más a las 24 h si sigue sin marcar (sin la marca, la IA de
+ * Cierre y los correos post-visita no la toman). Se cuentan los avisos en
+ * Notification. Corre cada 10 min.
  */
 export async function preguntarVisitasPasadas() {
   const ahora = Date.now();
@@ -91,7 +93,7 @@ export async function preguntarVisitasPasadas() {
     where: {
       visitDate: {
         lte: new Date(ahora - HORAS_PARA_PREGUNTAR * 60 * 60 * 1000),
-        gte: new Date(ahora - HORAS_PARA_ASUMIR * 60 * 60 * 1000),
+        gte: new Date(ahora - HORAS_DEJAR_DE_PREGUNTAR * 60 * 60 * 1000),
       },
       assignedToId: { not: null },
       status: { notIn: ["PERDIDO", "RESERVADO", "RESERVA_POR_FIRMAR", "RESERVA_PAGADA", "PIE_POR_PAGAR", "PAGO_CUOTAS", "VENTA_CERRADA"] },
@@ -103,17 +105,19 @@ export async function preguntarVisitasPasadas() {
   let n = 0;
   for (const l of leads) {
     if (!l.visitDate || !l.assignedToId) continue;
-    const yaPregunto = await prisma.notification.findFirst({
+    const avisos = await prisma.notification.count({
       where: { leadId: l.id, type: "VISITA_RESULTADO", createdAt: { gte: l.visitDate } },
-      select: { id: true },
     });
-    if (yaPregunto) continue;
+    const horas = (ahora - l.visitDate.getTime()) / (60 * 60 * 1000);
+    const toca = avisos === 0 || (avisos === 1 && horas >= HORAS_SEGUNDO_AVISO);
+    if (!toca) continue;
     const v = await estadoDeVisita(l.id);
     if (v.estado !== "por_marcar") continue;
+    const quien = l.firstName || "el cliente";
     await createNotification({
       userId: l.assignedToId,
-      title: "¿Llegó a la visita?",
-      body: `Marca si ${l.firstName || "el cliente"} llegó a la visita${l.visitProject ? ` a ${l.visitProject}` : ""}. Con eso la IA de Cierre sabe si hacer el seguimiento.`,
+      title: avisos === 0 ? "¿Llegó a la visita?" : "Falta marcar la visita",
+      body: `Marca si ${quien} llegó a la visita${l.visitProject ? ` a ${l.visitProject}` : ""}. Sin esa marca la IA de Cierre no le hace seguimiento ni le llegan los correos post-visita.`,
       leadId: l.id,
       type: "VISITA_RESULTADO",
     });

@@ -5,8 +5,8 @@ import { estadoDeVisita, visitaRealizada } from "./visitaRealizada";
 /**
  * Qué IA atiende a la persona según la etapa de su lead (fase 3, 12-11-2026):
  *
- *   - Sin visita, con visita agendada o si no llegó  → Ali ("atraccion").
- *   - Llegó a la visita (o se asume) y no ha reservado → Cierre ("cierre").
+ *   - Sin visita, agendada, sin marcar o no llegó    → Ali ("atraccion").
+ *   - El asesor marcó que llegó a la visita y no ha reservado → Cierre ("cierre").
  *   - Reservado, cliente o perdido                   → Ali, que con la memoria
  *     deriva la postventa al asesor.
  *

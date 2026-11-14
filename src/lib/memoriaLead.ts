@@ -152,9 +152,8 @@ export async function memoriaDelLead(conversationId: string, anteriores: Mensaje
     const visita = lead.visitDate ? await estadoDeVisita(lead.id).catch(() => null) : null;
     const TEXTO_VISITA: Record<string, string> = {
       agendada: "Visita agendada",
-      por_marcar: "Tenía visita (todavía no se sabe si llegó)",
+      por_marcar: "Tenía visita (el asesor no ha marcado si llegó)",
       llego: "Visita realizada (llegó)",
-      asumida: "Visita realizada (se asume que llegó)",
       no_llego: "Tenía visita y NO llegó",
     };
     const ficha = [

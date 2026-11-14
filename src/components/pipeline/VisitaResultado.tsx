@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { MapPin, CheckCircle2, XCircle } from "lucide-react";
 import clsx from "clsx";
 
-type Estado = "sin_visita" | "agendada" | "por_marcar" | "llego" | "no_llego" | "asumida";
+type Estado = "sin_visita" | "agendada" | "por_marcar" | "llego" | "no_llego";
 interface Visita {
   estado: Estado;
   fecha: string | null;
@@ -57,9 +57,7 @@ export default function VisitaResultado({ leadId }: { leadId: string }) {
       ? "Llegó a la visita"
       : visita.estado === "no_llego"
         ? "No llegó a la visita"
-        : visita.estado === "asumida"
-          ? "¿Llegó a la visita? (sin marcar: se asume que sí)"
-          : "¿Llegó a la visita?";
+        : "¿Llegó a la visita?";
 
   return (
     <div className="px-4 mb-6">
@@ -77,7 +75,7 @@ export default function VisitaResultado({ leadId }: { leadId: string }) {
             <p className="text-sm font-bold text-slate-800 leading-tight">{titulo}</p>
             <p className="text-[11px] text-slate-500 mt-0.5">
               {[visita.proyecto, cuando].filter(Boolean).join(" · ")}
-              {!marcada ? " · Con esto la IA de Cierre sabe si hacer el seguimiento." : ""}
+              {!marcada ? " · Sin esta marca la IA de Cierre no le hace seguimiento." : ""}
             </p>
           </div>
         </div>

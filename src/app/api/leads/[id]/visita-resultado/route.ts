@@ -6,7 +6,7 @@ import { estadoDeVisita, marcarVisita } from "@/lib/visitaRealizada";
 
 export const dynamic = "force-dynamic";
 
-/** Estado de la última visita del lead: agendada, por marcar, llegó, no llegó o asumida. */
+/** Estado de la última visita del lead: agendada, por marcar, llegó o no llegó. */
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const session = (await getServerSession(authOptions as any)) as any;
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
