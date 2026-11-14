@@ -1,6 +1,7 @@
 import prisma from "./prisma";
 import { reportarUsoIA } from "./usoIA";
 import { tokenInstagram } from "./tokenInstagram";
+import { oficinaDice, oficinaTrabaja } from "./oficina";
 
 /**
  * Respuesta automática de Instagram y Facebook.
@@ -344,15 +345,22 @@ export async function responderAutomatico(e: Entrada, opciones: OpcionesRespuest
     return nada;
   }
   console.log(`[auto] Recibido ${e.plataforma}/${e.via} en ${e.conversationId}`);
+  // Para la Oficina IA: Ali - Interacción se ve trabajando (solo canal y acción).
+  const red = e.plataforma === "instagram" ? "Instagram" : "Facebook";
+  const que = e.via === "comentario" ? "un comentario" : "un mensaje";
   try {
     if (await yaAtendida(e.conversationId)) {
       console.log(`[auto] ${e.conversationId}: ya tuvo respuesta de asesor o automática en ${DIAS_ENTRE_RESPUESTAS} días, no respondo.`);
       return nada;
     }
 
+    oficinaTrabaja("ali", `Leyendo ${que} de ${red}`);
     const categoria = await clasificar(e.texto, e.publicacion, { canal: e.plataforma, conversationId: e.conversationId });
     console.log(`[auto] ${e.plataforma}/${e.via} → ${categoria}: ${e.texto.slice(0, 80)}`);
-    if (categoria === "ignorar") return { categoria, enviado: false };
+    if (categoria === "ignorar") {
+      oficinaDice("ali", `Leí ${que} de ${red}: no necesita respuesta`);
+      return { categoria, enviado: false };
+    }
 
     const p = plantilla(categoria, {
       nombre: e.nombre,
@@ -368,6 +376,7 @@ export async function responderAutomatico(e: Entrada, opciones: OpcionesRespuest
           ? "⚠️ Mensaje delicado (reclamo, desconfianza, insulto o postventa). No se respondió: falta el protocolo de respuesta, lo revisa una persona."
           : `Respuesta automática: no se envió nada (${NOMBRE_CATEGORIA[categoria]}). Lo atiende un asesor.`
       );
+      oficinaDice("ali", `Dejé ${que} de ${red} para una persona`);
       return { categoria, enviado: false };
     }
 
@@ -389,7 +398,10 @@ export async function responderAutomatico(e: Entrada, opciones: OpcionesRespuest
     } else {
       // DM: la ventana de 24 h está abierta porque la persona acaba de escribir.
       const psid = await psidDe(conversationId);
-      if (!psid) return { categoria, enviado: false };
+      if (!psid) {
+        oficinaDice("ali", `No pude responder ${que} de ${red}`);
+        return { categoria, enviado: false };
+      }
       if (p.imagen) {
         try {
           const img = await graph("/me/messages", {
@@ -412,9 +424,11 @@ export async function responderAutomatico(e: Entrada, opciones: OpcionesRespuest
     }
 
     await anotar(conversationId, `Respuesta automática enviada: ${NOMBRE_CATEGORIA[categoria]}.`);
+    oficinaDice("ali", `Respondí ${que} de ${red}`);
     return { categoria, enviado: true };
   } catch (error) {
     console.error("[auto] Error en la respuesta automática:", error);
+    oficinaDice("ali", `No pude responder ${que} de ${red}`);
     return nada;
   }
 }

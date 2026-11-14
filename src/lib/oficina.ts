@@ -21,6 +21,11 @@ function enviar(ruta: string, cuerpo: unknown) {
   }).catch(() => {});
 }
 
+/** El agente se pone a trabajar (se sienta en su escritorio). */
+export function oficinaTrabaja(agente: Agente, tarea: string) {
+  enviar("/api/heartbeat", { agent: agente, name: NOMBRE[agente], state: "working", task: tarea.slice(0, 80) });
+}
+
 /** El agente dice algo en la oficina y, unos segundos después, queda disponible. */
 export function oficinaDice(agente: Agente, mensaje: string) {
   enviar("/api/act", { agent: agente, action: { type: "speak", message: mensaje.slice(0, 80) } });
