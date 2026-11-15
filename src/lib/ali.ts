@@ -29,6 +29,12 @@ export const HANDOFF_SOURCE = "HANDOFF";
 export const DUENO_MIENTRAS_ALI = "initial-admin-id";
 /** Fuente de los leads que crea Ali en Instagram y Facebook (ver lib/aliRedes.ts). */
 export const FUENTES_IA = ["Instagram - IA", "Facebook - IA"];
+/**
+ * Comienzo de las notas que piden a una persona (falla técnica de Ali,
+ * mensaje delicado). Esas conversaciones entran a la bandeja y avisan al
+ * asesor (pedirUnaPersona). Revisión Elephant Goldfish, 15-11-2026.
+ */
+export const NOTA_PERSONA = "⚠️";
 
 export interface EstadoAli {
   /** Ningún asesor escribió todavía: Ali responde. */
@@ -58,6 +64,8 @@ export function filtroBandeja(usuario: { id: string; role?: string | null }): Pr
         platform: { in: ["instagram", "facebook"] },
         OR: [
           { messages: { some: { senderType: ALI_SENDER, sourceType: HANDOFF_SOURCE } } },
+          // Ali no pudo responder o el mensaje es delicado: lo tiene que ver una persona.
+          { messages: { some: { sourceType: "EVENTO", text: { startsWith: NOTA_PERSONA } } } },
           // Lead de Ali que ya salió de las manos de Nicolás hacia un asesor.
           { lead: { is: { source: { in: FUENTES_IA }, assignedToId: { not: DUENO_MIENTRAS_ALI } } } },
         ],
@@ -293,5 +301,57 @@ export async function avisarDerivacion({
   const [, resultadoWhatsapp] = await Promise.allSettled([push, whatsapp]);
   if (resultadoWhatsapp.status === "rejected") {
     console.error("[ali] No salió la derivación por WhatsApp:", resultadoWhatsapp.reason);
+  }
+}
+
+/**
+ * Deja una nota "⚠️" en la conversación (la vuelve visible en la bandeja) y
+ * avisa con push y al grupo de leads, como una derivación. Para fallas de Ali
+ * y mensajes delicados que antes quedaban como nota sin que nadie se enterara
+ * (revisión Elephant Goldfish, 15-11-2026). No repite el aviso de la misma
+ * conversación en 6 horas. Nunca lanza.
+ */
+export async function pedirUnaPersona(
+  conversationId: string,
+  nota: string,
+  motivo: string,
+  opciones: { avisar?: boolean } = {}
+) {
+  try {
+    const reciente = await prisma.message.findFirst({
+      where: {
+        conversationId,
+        sourceType: "EVENTO",
+        text: { startsWith: NOTA_PERSONA },
+        createdAt: { gte: new Date(Date.now() - 6 * 3600_000) },
+      },
+      select: { id: true },
+    });
+    await prisma.message.create({
+      data: { conversationId, text: `${NOTA_PERSONA} ${nota}`.slice(0, 1000), senderType: ALI_SENDER, sourceType: "EVENTO" },
+    });
+    await prisma.conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } });
+    if (reciente || opciones.avisar === false) return;
+
+    const conv = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { lead: { include: { assignedTo: { select: { name: true } } } } },
+    });
+    if (!conv) return;
+    const lead = conv.lead;
+    // Un lead que todavía atiende Ali es de Nicolás: el aviso va a la rueda.
+    const asignadoId = lead?.assignedToId && lead.assignedToId !== DUENO_MIENTRAS_ALI ? lead.assignedToId : null;
+    const canal = conv.platform === "instagram" ? "Instagram" : conv.platform === "facebook" ? "Facebook" : "Chat web";
+    await avisarDerivacion({
+      leadId: conv.leadId,
+      nombre: [lead?.firstName, lead?.lastName].filter(Boolean).join(" ") || conv.metaName || "Un cliente",
+      motivo,
+      resumen: "",
+      asignadoId,
+      asignadoNombre: asignadoId ? lead?.assignedTo?.name || null : null,
+      canal,
+    });
+  } catch (error) {
+    console.error(`[ali] No se pudo pedir una persona para ${conversationId}:`, error);
   }
 }

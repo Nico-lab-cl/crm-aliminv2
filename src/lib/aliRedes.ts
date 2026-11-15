@@ -1,7 +1,7 @@
 import prisma from "./prisma";
 import { BARBARA_ID, MARCELA_ID, ORLANDO_ID, getNextAdvisorId } from "./assignment";
 import { createNotification } from "./notifications";
-import { ALI_SENDER, DUENO_MIENTRAS_ALI, FUENTES_IA, HANDOFF_SOURCE, avisarDerivacion } from "./ali";
+import { ALI_SENDER, DUENO_MIENTRAS_ALI, FUENTES_IA, HANDOFF_SOURCE, NOTA_PERSONA, avisarDerivacion, pedirUnaPersona } from "./ali";
 import { enviarAlGrupo } from "./avisosWhatsappLeads";
 import { memoriaDelLead } from "./memoriaLead";
 import { agenteParaLead } from "./agenteIA";
@@ -47,6 +47,14 @@ const VENTANA_META_MS = 24 * 60 * 60 * 1000;
 const ESPERA_ASESOR_MS = 2 * 60 * 60 * 1000;
 const DIAS_ENTRE_COMENTARIOS = 7;
 const TIMEOUT_SITIO_MS = 60_000;
+/**
+ * Reintentos (revisión Elephant Goldfish, 15-11-2026): si Ali no logra
+ * responder un mensaje (el sitio falla, se reinicia el CRM, error de Meta o
+ * respuesta vacía), queda una nota de falla y recuperarSinRespuesta lo vuelve
+ * a intentar. Después de MAX_INTENTOS se le pasa a una persona con aviso.
+ */
+const MAX_INTENTOS = 2;
+const FALLA = "Ali no pudo responder este mensaje";
 
 // DUENO_MIENTRAS_ALI y FUENTES_IA viven en lib/ali.ts porque la bandeja del
 // CRM también los usa (filtroBandeja); se reexportan para no romper imports.
@@ -175,6 +183,7 @@ async function correr(t: Turno) {
     await responder(t.aviso);
   } catch (error) {
     console.error(`[ali-redes] Error respondiendo ${t.aviso.conversationId}:`, error);
+    await anotarFalla(t.aviso.conversationId, "error al enviar o al preparar la respuesta").catch(() => {});
   } finally {
     t.corriendo = false;
     if (t.pendiente) {
@@ -308,14 +317,17 @@ async function responder(a: AvisoMeta) {
     });
   } catch (error) {
     console.error(`[ali-redes] El sitio no respondió para ${conv.id}:`, error);
-    await anotarUnaVez(conv.id, "Ali no pudo responder este mensaje (falla técnica). Lo tiene que atender un asesor.");
+    await anotarFalla(conv.id, "el sitio no respondió");
     return;
   }
 
   // Los datos se guardan aunque después falle el envío.
   await procesarContacto(conv.id, plataforma, r.contacto, mensajes.filter((m) => m.de === "cliente").map((m) => m.texto));
 
-  if (!r.burbujas.length) return;
+  if (!r.burbujas.length) {
+    await anotarFalla(conv.id, "la respuesta salió vacía");
+    return;
+  }
   if (await asesorEscribioDesde(conv.id, inicio)) return;
 
   let conversationId = conv.id;
@@ -388,13 +400,30 @@ async function asesorEscribioDesde(conversationId: string, desde: Date) {
   return Boolean(m);
 }
 
-/** Nota interna que no se repite en la misma hora. */
-async function anotarUnaVez(conversationId: string, texto: string) {
-  const reciente = await prisma.message.findFirst({
-    where: { conversationId, sourceType: EVENTO_SOURCE, text: texto, createdAt: { gte: new Date(Date.now() - 3600_000) } },
-    select: { id: true },
+/**
+ * Nota de falla numerada desde el último mensaje del cliente ("intento 1",
+ * "intento 2"). recuperarSinRespuesta cuenta estas notas para saber si
+ * reintenta o se lo pasa a una persona.
+ */
+async function anotarFalla(conversationId: string, motivo: string) {
+  const ultimoCliente = await prisma.message.findFirst({
+    where: { conversationId, senderType: "meta" },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
   });
-  if (!reciente) await anotar(conversationId, texto);
+  const previas = await prisma.message.count({
+    where: {
+      conversationId,
+      sourceType: EVENTO_SOURCE,
+      text: { startsWith: FALLA },
+      ...(ultimoCliente ? { createdAt: { gt: ultimoCliente.createdAt } } : {}),
+    },
+  });
+  const intento = previas + 1;
+  await anotar(
+    conversationId,
+    `${FALLA} (${motivo}), intento ${intento} de ${MAX_INTENTOS}. ${intento < MAX_INTENTOS ? "Se reintenta en unos minutos." : "Pasa a una persona."}`
+  );
 }
 
 async function derivar(conversationId: string, plataforma: "instagram" | "facebook", d: { motivo: string; resumen: string }) {
@@ -659,6 +688,70 @@ export async function revisarPasesAlAsesor() {
   return n;
 }
 
+/* ── Recuperar mensajes que Ali no alcanzó a responder ────────────────── */
+
+/**
+ * Conversaciones de IG/FB donde el último mensaje es del cliente (DM), lleva
+ * más de 5 minutos sin respuesta y ningún asesor ha escrito (esas las ve
+ * retomarPendientes). Si Ali ya falló MAX_INTENTOS veces, se la pasa a una
+ * persona con aviso; si no, lo vuelve a intentar. Corre cada 10 minutos.
+ */
+export async function recuperarSinRespuesta() {
+  const modo = modoAliRedes();
+  if (modo === "apagada" || !respuestaAutoActiva() || !process.env.IA_SECRET) return { reintentos: 0, aPersona: 0 };
+
+  const filas = await prisma.$queryRaw<{ id: string; platform: string; lead_id: string | null; fallas: number }[]>`
+    SELECT c.id, c.platform, c."leadId" AS lead_id,
+           (SELECT count(*)::int FROM "Message" f
+             WHERE f."conversationId" = c.id AND f."sourceType" = ${EVENTO_SOURCE}
+               AND f.text LIKE ${FALLA + "%"} AND f."createdAt" > cl.fecha) AS fallas
+      FROM "Conversation" c
+      JOIN LATERAL (
+        SELECT "createdAt" AS fecha, "sourceType" AS tipo FROM "Message"
+         WHERE "conversationId" = c.id AND "senderType" = 'meta'
+         ORDER BY "createdAt" DESC LIMIT 1
+      ) cl ON true
+     WHERE c.platform IN ('instagram', 'facebook')
+       AND cl.tipo = 'DIRECT'
+       AND (cl.fecha AT TIME ZONE 'UTC') < now() - interval '5 minutes'
+       AND (cl.fecha AT TIME ZONE 'UTC') > now() - interval '23 hours'
+       AND NOT EXISTS (SELECT 1 FROM "Message" a WHERE a."conversationId" = c.id AND a."senderType" = 'advisor')
+       AND NOT EXISTS (
+         SELECT 1 FROM "Message" r
+          WHERE r."conversationId" = c.id AND r."senderType" = 'ali'
+            AND r."sourceType" <> ${EVENTO_SOURCE} AND r."createdAt" > cl.fecha
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM "Message" n
+          WHERE n."conversationId" = c.id AND n."sourceType" = ${EVENTO_SOURCE}
+            AND n.text LIKE ${NOTA_PERSONA + "%"} AND n."createdAt" > cl.fecha
+       )
+     ORDER BY cl.fecha
+     LIMIT 20`;
+
+  let reintentos = 0;
+  let aPersona = 0;
+  for (const f of filas) {
+    if (turnos.has(f.id)) continue;
+    if (modo === "prueba" && !(await esCuentaDePrueba(f.id))) continue;
+    if (f.fallas >= MAX_INTENTOS) {
+      aPersona++;
+      await pasarAPersona(f.id, f.lead_id);
+      continue;
+    }
+    reintentos++;
+    programar({ conversationId: f.id, plataforma: f.platform as "instagram" | "facebook", via: "dm", texto: "", nueva: false, conTexto: false });
+  }
+  return { reintentos, aPersona };
+}
+
+/** Después de los reintentos: si el lead es de Ali pasa a la rueda; siempre queda la nota ⚠️ en la bandeja. */
+async function pasarAPersona(conversationId: string, leadId: string | null) {
+  const motivo = `Ali no pudo responder después de ${MAX_INTENTOS} intentos`;
+  const pasado = leadId ? await pasarAlAsesor(leadId, motivo) : false;
+  await pedirUnaPersona(conversationId, `${motivo}. El cliente está esperando: respóndele desde aquí.`, motivo, { avisar: !pasado });
+}
+
 /* ── Retomar cuando el asesor no responde ─────────────────────────────── */
 
 /**
@@ -669,8 +762,11 @@ export async function retomarPendientes() {
   const modo = modoAliRedes();
   if (modo === "apagada" || !respuestaAutoActiva() || !process.env.IA_SECRET) return 0;
 
-  const filas = await prisma.$queryRaw<{ id: string; platform: string }[]>`
-    SELECT c.id, c.platform
+  const filas = await prisma.$queryRaw<{ id: string; platform: string; lead_id: string | null; fallas: number }[]>`
+    SELECT c.id, c.platform, c."leadId" AS lead_id,
+           (SELECT count(*)::int FROM "Message" f
+             WHERE f."conversationId" = c.id AND f."sourceType" = ${EVENTO_SOURCE}
+               AND f.text LIKE ${FALLA + "%"} AND f."createdAt" > cl.fecha) AS fallas
       FROM "Conversation" c
       JOIN LATERAL (
         SELECT "createdAt" AS fecha FROM "Message"
@@ -686,12 +782,22 @@ export async function retomarPendientes() {
           WHERE r."conversationId" = c.id AND r."senderType" IN ('advisor', 'ali')
             AND r."sourceType" <> ${EVENTO_SOURCE} AND r."createdAt" > cl.fecha
        )
+       AND NOT EXISTS (
+         SELECT 1 FROM "Message" n
+          WHERE n."conversationId" = c.id AND n."sourceType" = ${EVENTO_SOURCE}
+            AND n.text LIKE ${NOTA_PERSONA + "%"} AND n."createdAt" > cl.fecha
+       )
      LIMIT 20`;
 
   let n = 0;
   for (const f of filas) {
     if (turnos.has(f.id)) continue;
     if (modo === "prueba" && !(await esCuentaDePrueba(f.id))) continue;
+    // Antes reintentaba cada 10 minutos sin tope (y se pagaba cada vuelta).
+    if (f.fallas >= MAX_INTENTOS) {
+      await pasarAPersona(f.id, f.lead_id);
+      continue;
+    }
     n++;
     programar({
       conversationId: f.id,

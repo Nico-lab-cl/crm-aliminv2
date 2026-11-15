@@ -142,13 +142,20 @@ export async function register() {
     // pasada no hace nada.
     // También pasa a un asesor los leads de Ali que llegaron a 28 puntos o
     // tienen visita agendada.
-    const { retomarPendientes, revisarPasesAlAsesor } = await import("./lib/aliRedes");
+    const { retomarPendientes, revisarPasesAlAsesor, recuperarSinRespuesta } = await import("./lib/aliRedes");
     const timerAliRedes = setInterval(async () => {
       try {
         const n = await retomarPendientes();
         if (n) console.log(`[ali-redes] Retomando ${n} conversaciones sin respuesta del asesor.`);
       } catch (error) {
         console.error("[ali-redes] Falló la revisión de conversaciones pendientes:", error);
+      }
+      // Mensajes que Ali no alcanzó a responder: reintenta 2 veces y después avisa a una persona.
+      try {
+        const r = await recuperarSinRespuesta();
+        if (r.reintentos || r.aPersona) console.log(`[ali-redes] Sin respuesta: ${r.reintentos} reintentos, ${r.aPersona} pasados a una persona.`);
+      } catch (error) {
+        console.error("[ali-redes] Falló la recuperación de mensajes sin respuesta:", error);
       }
       try {
         const n = await revisarPasesAlAsesor();

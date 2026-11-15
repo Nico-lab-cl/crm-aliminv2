@@ -2,6 +2,7 @@ import prisma from "./prisma";
 import { reportarUsoIA } from "./usoIA";
 import { tokenInstagram } from "./tokenInstagram";
 import { oficinaDice, oficinaTrabaja } from "./oficina";
+import { pedirUnaPersona } from "./ali";
 
 /**
  * Respuesta automática de Instagram y Facebook.
@@ -370,11 +371,14 @@ export async function responderAutomatico(e: Entrada, opciones: OpcionesRespuest
       conAli: opciones.conAli,
     });
     if (!p) {
-      await anotar(
+      // Antes era solo una nota que nadie veía: ahora entra a la bandeja y avisa
+      // al asesor (revisión Elephant Goldfish, 15-11-2026).
+      await pedirUnaPersona(
         e.conversationId,
         opciones.conAli
-          ? "⚠️ Mensaje delicado (reclamo, desconfianza, insulto o postventa). No se respondió: falta el protocolo de respuesta, lo revisa una persona."
-          : `Respuesta automática: no se envió nada (${NOMBRE_CATEGORIA[categoria]}). Lo atiende un asesor.`
+          ? "Mensaje delicado (reclamo, desconfianza, insulto o postventa). No se respondió: falta el protocolo de respuesta, lo revisa una persona."
+          : `Respuesta automática: no se envió nada (${NOMBRE_CATEGORIA[categoria]}). Lo atiende un asesor.`,
+        `${que === "un comentario" ? "Comentario" : "Mensaje"} en ${red} que tiene que ver una persona (${NOMBRE_CATEGORIA[categoria]})`
       );
       oficinaDice("ali", `Dejé ${que} de ${red} para una persona`);
       return { categoria, enviado: false };

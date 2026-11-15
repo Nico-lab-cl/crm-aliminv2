@@ -188,9 +188,17 @@ export async function GET(req: Request) {
   }
 }
 
+/** Clave escrita antes en el código: solo se usa si falta CRM_API_KEY. Cámbiala y bórrala. */
+const CLAVE_ANTIGUA_LEADS = "lomas_del_mar_secret_2026";
+
 export async function POST(req: Request) {
   const apiKey = req.headers.get("x-crm-api-key");
-  const isExternalRequest = apiKey === "lomas_del_mar_secret_2026";
+  // La clave va en CRM_API_KEY (revisión Elephant Goldfish, 15-11-2026). Si
+  // falta, se acepta la clave antigua para no cortar los leads del sitio, con
+  // aviso en el log: hay que cargar CRM_API_KEY y cambiarla en el sitio.
+  const claveLeads = process.env.CRM_API_KEY || CLAVE_ANTIGUA_LEADS;
+  if (!process.env.CRM_API_KEY && apiKey) console.warn("[leads] Falta CRM_API_KEY: se está usando la clave antigua escrita en el código.");
+  const isExternalRequest = Boolean(apiKey) && apiKey === claveLeads;
   
   let session = null;
   if (!isExternalRequest) {

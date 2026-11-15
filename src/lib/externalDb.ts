@@ -5,12 +5,17 @@ import { Pool } from "pg";
  * This pool connects to the remote PostgreSQL database to fetch web leads and newsletter subscribers.
  */
 
-// We use the external connection string provided by the user
-const externalConnectionString = "postgres://nicolas:zampullido20@84.247.162.186:5433/aliminspa?sslmode=disable";
+// La conexión va en la variable EXTERNAL_DB_URL (revisión Elephant Goldfish,
+// 15-11-2026: antes estaba escrita aquí, con su contraseña). Sin la variable,
+// el sync de leads del sitio falla con un error claro en el log.
+const externalConnectionString = process.env.EXTERNAL_DB_URL;
 
 let pool: Pool | null = null;
 
 export const getExternalPool = () => {
+  if (!externalConnectionString) {
+    throw new Error("Falta EXTERNAL_DB_URL: no se puede leer la base del sitio.");
+  }
   if (!pool) {
     pool = new Pool({
       connectionString: externalConnectionString,
