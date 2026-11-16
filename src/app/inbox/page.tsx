@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MessageSquare, User, ChevronRight, Search, ShieldCheck, Phone, Calendar, Globe, Facebook, Instagram } from "lucide-react";
+import { MessageSquare, User, ChevronRight, Search, ShieldCheck, Phone, Calendar, Globe, Facebook, Instagram, MessageCircle } from "lucide-react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { formatDistanceToNow, isToday, isYesterday, startOfWeek, endOfDay, isWithinInterval, parseISO } from "date-fns";
@@ -196,6 +196,8 @@ export default function InboxPage() {
                       <Facebook size={12} className="text-[#1877F2]" fill="currentColor" />
                     ) : conv.platform === "instagram" ? (
                       <Instagram size={12} className="text-[#E4405F]" />
+                    ) : conv.platform === "whatsapp" ? (
+                      <MessageCircle size={12} className="text-[#25D366]" />
                     ) : (
                       <Globe size={12} className="text-emerald-600" />
                     )}

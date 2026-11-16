@@ -290,7 +290,7 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
   // después del último mensaje del cliente. Se avisa antes de que el asesor
   // escriba, en vez de dejarlo descubrirlo con un error. Si lo último del
   // cliente fue un comentario, la respuesta va al comentario y no hay plazo.
-  const red = conversation.platform === "instagram" ? "Instagram" : "Facebook";
+  const red = conversation.platform === "instagram" ? "Instagram" : conversation.platform === "whatsapp" ? "WhatsApp" : "Facebook";
   const ultimoDelCliente = esChatWeb ? null : [...messages].reverse().find((m) => m?.senderType === "meta");
   const horasDesdeElCliente =
     ultimoDelCliente?.sourceType === "DIRECT"
@@ -321,6 +321,8 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
                 <Facebook size={10} className="text-[#1877F2]" fill="currentColor" />
             ) : conversation.platform === "instagram" ? (
                 <Instagram size={10} className="text-[#E4405F]" />
+            ) : conversation.platform === "whatsapp" ? (
+                <MessageCircle size={10} className="text-[#25D366]" />
             ) : (
                 <div className="text-black font-black text-[7px] leading-none">TT</div>
             )}

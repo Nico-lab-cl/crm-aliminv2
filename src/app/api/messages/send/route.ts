@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { WEB_CHAT_PLATFORM } from "@/lib/web-chat";
 import { marcarContactado } from "@/lib/followups";
 import { asignarAlQueResponde, puedeVerConversacion } from "@/lib/ali";
+import { ErrorWhatsapp, WA_PLATFORM, enviarTextoWhatsapp, motivoRechazoWhatsapp, waIdDePsid } from "@/lib/whatsapp";
 
 /**
  * Explica en palabras del asesor por qué Meta no dejó enviar el mensaje y qué
@@ -69,8 +70,23 @@ export async function POST(req: Request) {
     //    aliminspa.cl lo recoge en su siguiente consulta.
     const esChatWeb = conversation.platform === WEB_CHAT_PLATFORM;
 
+    // WhatsApp (número de Ali, Cloud API): el asesor responde por el mismo número.
+    let idWhatsapp: string | null = null;
+    if (conversation.platform === WA_PLATFORM) {
+      try {
+        idWhatsapp = await enviarTextoWhatsapp(waIdDePsid(conversation.psid), text);
+      } catch (error) {
+        const detalle = error instanceof ErrorWhatsapp ? error.detalle : null;
+        console.error("Error de WhatsApp:", error);
+        return NextResponse.json(
+          { error: "Failed to send message via WhatsApp", motivo: motivoRechazoWhatsapp(detalle), details: detalle },
+          { status: 502 }
+        );
+      }
+    }
+
     let metaResponse;
-    if (esChatWeb) {
+    if (esChatWeb || conversation.platform === WA_PLATFORM) {
       // Sin transporte externo que llamar.
     } else if (sourceType === "DIRECT") {
       // API de Messenger
@@ -94,8 +110,8 @@ export async function POST(req: Request) {
       });
     }
 
-    let metaId: string | null = null;
-    if (!esChatWeb) {
+    let metaId: string | null = idWhatsapp;
+    if (!esChatWeb && conversation.platform !== WA_PLATFORM) {
       const metaData = await metaResponse?.json();
       // Con el id de Meta guardado, el eco que devuelve el webhook se reconoce
       // como repetido y no aparece dos veces en la bandeja.

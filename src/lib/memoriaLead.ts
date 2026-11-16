@@ -24,7 +24,7 @@ const MAX_TOTAL = 7000;
 
 type MensajeMemoria = { text: string; senderType: string; sourceType: string; createdAt: Date };
 
-const CANAL: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", web: "chat web", tiktok: "TikTok" };
+const CANAL: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", whatsapp: "WhatsApp", web: "chat web", tiktok: "TikTok" };
 
 const fecha = (d: Date) =>
   d.toLocaleString("es-CL", { timeZone: "America/Santiago", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });

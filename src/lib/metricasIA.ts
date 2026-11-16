@@ -10,7 +10,7 @@ import prisma from "./prisma";
  */
 
 export interface MetricaCanal {
-  canal: "web" | "instagram" | "facebook";
+  canal: "web" | "instagram" | "facebook" | "whatsapp";
   conversaciones: number;
   conTelefono: number;
   leads: number;
@@ -21,6 +21,7 @@ const FUENTE_LEADS: Record<MetricaCanal["canal"], string> = {
   web: "Chat web aliminspa.cl",
   instagram: "Instagram - IA",
   facebook: "Facebook - IA",
+  whatsapp: "WhatsApp - IA",
 };
 
 export async function metricasIA(desde: Date, hasta: Date): Promise<MetricaCanal[]> {
@@ -29,7 +30,7 @@ export async function metricasIA(desde: Date, hasta: Date): Promise<MetricaCanal
       SELECT DISTINCT c.id, c.platform, c."leadId"
         FROM "Conversation" c
         JOIN "Message" m ON m."conversationId" = c.id
-       WHERE c.platform IN ('web', 'instagram', 'facebook')
+       WHERE c.platform IN ('web', 'instagram', 'facebook', 'whatsapp')
          AND m."senderType" = 'ali' AND m."sourceType" IN ('DIRECT', 'HANDOFF')
          AND (m."createdAt" AT TIME ZONE 'UTC') >= ${desde} AND (m."createdAt" AT TIME ZONE 'UTC') < ${hasta}
     )
@@ -47,11 +48,11 @@ export async function metricasIA(desde: Date, hasta: Date): Promise<MetricaCanal
 
   const leads = await prisma.$queryRaw<{ source: string; n: number }[]>`
     SELECT source, COUNT(*)::int AS n FROM "Lead"
-     WHERE source IN (${FUENTE_LEADS.web}, ${FUENTE_LEADS.instagram}, ${FUENTE_LEADS.facebook})
+     WHERE source IN (${FUENTE_LEADS.web}, ${FUENTE_LEADS.instagram}, ${FUENTE_LEADS.facebook}, ${FUENTE_LEADS.whatsapp})
        AND ("createdAt" AT TIME ZONE 'UTC') >= ${desde} AND ("createdAt" AT TIME ZONE 'UTC') < ${hasta}
      GROUP BY source`;
 
-  return (["web", "instagram", "facebook"] as const).map((canal) => {
+  return (["web", "instagram", "facebook", "whatsapp"] as const).map((canal) => {
     const c = conv.find((x) => x.platform === canal);
     return {
       canal,
@@ -63,7 +64,7 @@ export async function metricasIA(desde: Date, hasta: Date): Promise<MetricaCanal
   });
 }
 
-const NOMBRE: Record<MetricaCanal["canal"], string> = { web: "Web", instagram: "Instagram", facebook: "Facebook" };
+const NOMBRE: Record<MetricaCanal["canal"], string> = { web: "Web", instagram: "Instagram", facebook: "Facebook", whatsapp: "WhatsApp" };
 
 /** Líneas para el resumen del grupo. Vacío si Ali no atendió a nadie en el período. */
 export function textoMetricasIA(m: MetricaCanal[]): string[] {

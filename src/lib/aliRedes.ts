@@ -6,6 +6,7 @@ import { ASESORES_ANUNCIABLES, enviarAlGrupo } from "./avisosWhatsappLeads";
 import { memoriaDelLead } from "./memoriaLead";
 import { agenteParaLead } from "./agenteIA";
 import { oficinaDice } from "./oficina";
+import { aliWhatsappActiva, enviarTextoWhatsapp, marcarLeidoWhatsapp, waIdDePsid } from "./whatsapp";
 import {
   AUTO_SOURCE,
   EVENTO_SOURCE,
@@ -71,8 +72,12 @@ export function modoAliRedes(): ModoAliRedes {
   return "apagada";
 }
 
+/** Canales donde conversa Ali fuera del sitio. WhatsApp desde el 15-11-2026 (lib/whatsapp.ts). */
+export type Plataforma = "instagram" | "facebook" | "whatsapp";
+
 /** Un mensaje o comentario del cliente que llegó por el webhook de Meta. */
-export interface AvisoMeta extends Entrada {
+export interface AvisoMeta extends Omit<Entrada, "plataforma"> {
+  plataforma: Plataforma;
   /** Es el primer mensaje de una conversación nueva. */
   nueva: boolean;
   /** Tenía texto escrito (no solo un adjunto). La plantilla vieja solo responde texto. */
@@ -80,7 +85,7 @@ export interface AvisoMeta extends Entrada {
 }
 
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const RED: Record<"instagram" | "facebook", string> = { instagram: "Instagram", facebook: "Facebook" };
+const RED: Record<Plataforma, string> = { instagram: "Instagram", facebook: "Facebook", whatsapp: "WhatsApp" };
 
 /* ── Entrada desde el webhook ─────────────────────────────────────────── */
 
@@ -98,7 +103,7 @@ export async function atenderMeta(a: AvisoMeta) {
 
     if (!usaAli) {
       // Lo de siempre: plantilla al comentario o al primer DM con texto.
-      if (a.conTexto && (a.via === "comentario" || a.nueva)) await responderAutomatico(a);
+      if (a.conTexto && (a.via === "comentario" || a.nueva)) await responderAutomatico(a as Entrada);
       return;
     }
 
@@ -107,7 +112,7 @@ export async function atenderMeta(a: AvisoMeta) {
     // enlace. Si después escribe, conversa con Ali (Nicolás, 12-11-2026).
     if (a.via === "comentario") {
       const publica = await preciosPublicos(`${a.publicacion || ""} ${a.texto}`);
-      await responderAutomatico(a, { conAli: true, textoPublico: publica });
+      await responderAutomatico(a as Entrada, { conAli: true, textoPublico: publica });
       return;
     }
     // Inbox: la persona vino a conversar. Ali saluda, pregunta el nombre y da
@@ -215,8 +220,8 @@ async function responder(a: AvisoMeta) {
     where: { id: a.conversationId },
     include: { lead: { include: { assignedTo: { select: { name: true } } } } },
   });
-  if (!conv || (conv.platform !== "instagram" && conv.platform !== "facebook")) return;
-  const plataforma = conv.platform as "instagram" | "facebook";
+  if (!conv || !(["instagram", "facebook", "whatsapp"] as string[]).includes(conv.platform)) return;
+  const plataforma = conv.platform as Plataforma;
 
   const recientes: MensajeBase[] = (
     await prisma.message.findMany({
@@ -323,7 +328,12 @@ async function responder(a: AvisoMeta) {
       conversacionId: conv.id,
       via: viaComentario ? "comentario" : "dm",
       publicacion,
-      cliente: { nombre: nombreLead, telefono: lead?.phone || null, email: lead?.email || null },
+      // En WhatsApp el teléfono es el número desde el que escribe.
+      cliente: {
+        nombre: nombreLead || (plataforma === "whatsapp" ? conv.metaName : null) || null,
+        telefono: lead?.phone || (plataforma === "whatsapp" ? `+${waIdDePsid(conv.psid)}` : null),
+        email: lead?.email || null,
+      },
       mensajes,
       memoria,
       agente,
@@ -346,7 +356,17 @@ async function responder(a: AvisoMeta) {
   let conversationId = conv.id;
   const fuente = (i: number, total: number) => (r.derivacion && i === total - 1 ? HANDOFF_SOURCE : "DIRECT");
 
-  if (viaComentario && a.commentId) {
+  if (plataforma === "whatsapp") {
+    const waId = waIdDePsid(conv.psid);
+    for (let i = 0; i < r.burbujas.length; i++) {
+      if (i > 0) {
+        await dormir(PAUSA_ENTRE_BURBUJAS_MS);
+        if (await asesorEscribioDesde(conv.id, inicio)) return;
+      }
+      const id = await enviarTextoWhatsapp(waId, r.burbujas[i]);
+      await guardar(conversationId, r.burbujas[i], id, fuente(i, r.burbujas.length));
+    }
+  } else if (viaComentario && a.commentId) {
     // Meta permite un solo mensaje privado por comentario hasta que la persona
     // conteste: las burbujas van juntas en uno.
     const texto = r.burbujas.join("\n\n");
@@ -354,7 +374,7 @@ async function responder(a: AvisoMeta) {
     recordar(privado.message_id);
     conversationId = await unirConChat(conv.id, privado.recipient_id);
     await guardar(conversationId, texto, privado.message_id, fuente(0, 1));
-    // En público, los precios tal cual (decisión de Nicolás, 11-11-2026).
+    // En público, solo "te escribimos por interno": sin precios (Marcela, 16-11-2026).
     await responderEnPublico(a.commentId, plataforma, conversationId, r.publica || undefined);
   } else {
     for (let i = 0; i < r.burbujas.length; i++) {
@@ -480,7 +500,7 @@ async function anotarFalla(conversationId: string, motivo: string) {
   );
 }
 
-async function derivar(conversationId: string, plataforma: "instagram" | "facebook", d: { motivo: string; resumen: string }) {
+async function derivar(conversationId: string, plataforma: Plataforma, d: { motivo: string; resumen: string }) {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     include: { lead: { include: { assignedTo: { select: { name: true } } } } },
@@ -556,7 +576,7 @@ async function buscarPorTelefono(telefono: string) {
  */
 async function procesarContacto(
   conversationId: string,
-  plataforma: "instagram" | "facebook",
+  plataforma: Plataforma,
   deAli: RespuestaSitio["contacto"],
   textosCliente: string[]
 ) {
@@ -731,7 +751,7 @@ export async function revisarPasesAlAsesor() {
       FROM "Lead" l
       LEFT JOIN public.lead_score s ON s.lead_id = l.id
      WHERE l."assignedToId" = ${DUENO_MIENTRAS_ALI}
-       AND l.source IN (${FUENTES_IA[0]}, ${FUENTES_IA[1]})
+       AND l.source = ANY(${FUENTES_IA})
        AND (s.score >= ${PUNTAJE_PARA_ASESOR} OR l."bookingId" IS NOT NULL)
      LIMIT 20`;
   let n = 0;
@@ -752,7 +772,8 @@ export async function revisarPasesAlAsesor() {
  */
 export async function recuperarSinRespuesta() {
   const modo = modoAliRedes();
-  if (modo === "apagada" || !respuestaAutoActiva() || !process.env.IA_SECRET) return { reintentos: 0, aPersona: 0 };
+  const plataformas = plataformasConAli();
+  if (!plataformas.length) return { reintentos: 0, aPersona: 0 };
 
   const filas = await prisma.$queryRaw<{ id: string; platform: string; lead_id: string | null; fallas: number }[]>`
     SELECT c.id, c.platform, c."leadId" AS lead_id,
@@ -765,7 +786,7 @@ export async function recuperarSinRespuesta() {
          WHERE "conversationId" = c.id AND "senderType" = 'meta'
          ORDER BY "createdAt" DESC LIMIT 1
       ) cl ON true
-     WHERE c.platform IN ('instagram', 'facebook')
+     WHERE c.platform = ANY(${plataformas})
        AND cl.tipo = 'DIRECT'
        AND (cl.fecha AT TIME ZONE 'UTC') < now() - interval '5 minutes'
        AND (cl.fecha AT TIME ZONE 'UTC') > now() - interval '23 hours'
@@ -787,14 +808,14 @@ export async function recuperarSinRespuesta() {
   let aPersona = 0;
   for (const f of filas) {
     if (turnos.has(f.id)) continue;
-    if (modo === "prueba" && !(await esCuentaDePrueba(f.id))) continue;
+    if (f.platform !== "whatsapp" && modo === "prueba" && !(await esCuentaDePrueba(f.id))) continue;
     if (f.fallas >= MAX_INTENTOS) {
       aPersona++;
       await pasarAPersona(f.id, f.lead_id);
       continue;
     }
     reintentos++;
-    programar({ conversationId: f.id, plataforma: f.platform as "instagram" | "facebook", via: "dm", texto: "", nueva: false, conTexto: false });
+    programar({ conversationId: f.id, plataforma: f.platform as Plataforma, via: "dm", texto: "", nueva: false, conTexto: false });
   }
   return { reintentos, aPersona };
 }
@@ -814,7 +835,8 @@ async function pasarAPersona(conversationId: string, leadId: string | null) {
  */
 export async function retomarPendientes() {
   const modo = modoAliRedes();
-  if (modo === "apagada" || !respuestaAutoActiva() || !process.env.IA_SECRET) return 0;
+  const plataformas = plataformasConAli();
+  if (!plataformas.length) return 0;
 
   const filas = await prisma.$queryRaw<{ id: string; platform: string; lead_id: string | null; fallas: number }[]>`
     SELECT c.id, c.platform, c."leadId" AS lead_id,
@@ -827,7 +849,7 @@ export async function retomarPendientes() {
          WHERE "conversationId" = c.id AND "senderType" = 'meta' AND "sourceType" = 'DIRECT'
          ORDER BY "createdAt" DESC LIMIT 1
       ) cl ON true
-     WHERE c.platform IN ('instagram', 'facebook')
+     WHERE c.platform = ANY(${plataformas})
        AND (cl.fecha AT TIME ZONE 'UTC') < now() - interval '2 hours'
        AND (cl.fecha AT TIME ZONE 'UTC') > now() - interval '23 hours'
        AND EXISTS (SELECT 1 FROM "Message" a WHERE a."conversationId" = c.id AND a."senderType" = 'advisor')
@@ -846,7 +868,7 @@ export async function retomarPendientes() {
   let n = 0;
   for (const f of filas) {
     if (turnos.has(f.id)) continue;
-    if (modo === "prueba" && !(await esCuentaDePrueba(f.id))) continue;
+    if (f.platform !== "whatsapp" && modo === "prueba" && !(await esCuentaDePrueba(f.id))) continue;
     // Antes reintentaba cada 10 minutos sin tope (y se pagaba cada vuelta).
     if (f.fallas >= MAX_INTENTOS) {
       await pasarAPersona(f.id, f.lead_id);
@@ -855,7 +877,7 @@ export async function retomarPendientes() {
     n++;
     programar({
       conversationId: f.id,
-      plataforma: f.platform as "instagram" | "facebook",
+      plataforma: f.platform as Plataforma,
       via: "dm",
       texto: "",
       nueva: false,
@@ -863,4 +885,41 @@ export async function retomarPendientes() {
     });
   }
   return n;
+}
+
+/** Canales donde Ali está encendida: IG/FB según ALI_REDES_ACTIVA, WhatsApp según ALI_WHATSAPP_ACTIVA. */
+function plataformasConAli(): string[] {
+  if (!process.env.IA_SECRET) return [];
+  const lista: string[] = [];
+  if (modoAliRedes() !== "apagada" && respuestaAutoActiva()) lista.push("instagram", "facebook");
+  if (aliWhatsappActiva()) lista.push("whatsapp");
+  return lista;
+}
+
+/* ── WhatsApp ─────────────────────────────────────────────────────────── */
+
+/**
+ * Un mensaje de WhatsApp recién guardado: Ali lo marca como leído, muestra
+ * "escribiendo…" y responde con la misma espera de ráfaga que en IG/FB.
+ * Nunca lanza: corre después del 200 a Meta.
+ */
+export async function atenderWhatsapp(conversationId: string, mensajeId: string, publicacion: string | null) {
+  try {
+    if (!aliWhatsappActiva() || !process.env.IA_SECRET) return;
+    await marcarLeidoWhatsapp(mensajeId);
+    programar({ conversationId, plataforma: "whatsapp", via: "dm", texto: "", publicacion, nueva: false, conTexto: true });
+  } catch (error) {
+    console.error("[ali-whatsapp] Error atendiendo el mensaje:", error);
+  }
+}
+
+/**
+ * WhatsApp trae el teléfono: la conversación se vincula al lead que ya tenga
+ * ese número o se crea uno "WhatsApp - IA" a cargo de Nicolás mientras lo
+ * atiende Ali (mismas reglas que IG/FB). Nunca lanza.
+ */
+export async function vincularLeadWhatsapp(conversationId: string, waId: string, nombre: string | null) {
+  const telefono = normalizarTelefono(`+${waId.replace(/\D/g, "")}`);
+  if (!telefono) return;
+  await procesarContacto(conversationId, "whatsapp", { nombre, telefono, email: null, interes: null }, []);
 }

@@ -28,7 +28,7 @@ export const HANDOFF_SOURCE = "HANDOFF";
 /** Dueño de los leads que crea Ali en redes mientras ella los atiende: Nicolás (12-11-2026). */
 export const DUENO_MIENTRAS_ALI = "initial-admin-id";
 /** Fuente de los leads que crea Ali en Instagram y Facebook (ver lib/aliRedes.ts). */
-export const FUENTES_IA = ["Instagram - IA", "Facebook - IA"];
+export const FUENTES_IA = ["Instagram - IA", "Facebook - IA", "WhatsApp - IA"];
 /**
  * Comienzo de las notas que piden a una persona (falla técnica de Ali,
  * mensaje delicado). Esas conversaciones entran a la bandeja y avisan al
@@ -61,7 +61,7 @@ export function filtroBandeja(usuario: { id: string; role?: string | null }): Pr
     OR: [
       { platform: WEB_CHAT_PLATFORM, messages: { some: { senderType: ALI_SENDER } } },
       {
-        platform: { in: ["instagram", "facebook"] },
+        platform: { in: ["instagram", "facebook", "whatsapp"] },
         OR: [
           { messages: { some: { senderType: ALI_SENDER, sourceType: HANDOFF_SOURCE } } },
           // Ali no pudo responder o el mensaje es delicado: lo tiene que ver una persona.
