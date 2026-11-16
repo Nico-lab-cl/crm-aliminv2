@@ -2,7 +2,7 @@ import prisma from "./prisma";
 import { BARBARA_ID, MARCELA_ID, ORLANDO_ID, getNextAdvisorId } from "./assignment";
 import { createNotification } from "./notifications";
 import { ALI_SENDER, DUENO_MIENTRAS_ALI, FUENTES_IA, HANDOFF_SOURCE, NOTA_PERSONA, avisarDerivacion, pedirUnaPersona } from "./ali";
-import { enviarAlGrupo } from "./avisosWhatsappLeads";
+import { ASESORES_ANUNCIABLES, enviarAlGrupo } from "./avisosWhatsappLeads";
 import { memoriaDelLead } from "./memoriaLead";
 import { agenteParaLead } from "./agenteIA";
 import { oficinaDice } from "./oficina";
@@ -242,6 +242,19 @@ async function responder(a: AvisoMeta) {
     ultimoNuestro?.senderType === "advisor" && ahora - ultimoNuestro.createdAt.getTime() < ESPERA_ASESOR_MS;
   if (asesorActivo && ahora - ultimo.createdAt.getTime() < ESPERA_ASESOR_MS) {
     console.log(`[ali-redes] ${conv.id}: lo atiende un asesor; Ali retoma solo si pasan 2 h sin respuesta.`);
+    await avisarMensajeAlAsesor(conv, plataforma, ultimo);
+    return;
+  }
+  // Recién derivó ("te paso con un asesor"): Ali se calla 2 h aunque el
+  // cliente siga escribiendo ("ok, gracias"), para que no conteste encima del
+  // asesor. Si en 2 h nadie le respondió, retoma (Nicolás, 16-11-2026).
+  const recienDerivada =
+    ultimoNuestro?.senderType === ALI_SENDER &&
+    ultimoNuestro.sourceType === HANDOFF_SOURCE &&
+    ahora - ultimoNuestro.createdAt.getTime() < ESPERA_ASESOR_MS;
+  if (recienDerivada) {
+    console.log(`[ali-redes] ${conv.id}: Ali derivó hace menos de 2 h; espera al asesor.`);
+    await avisarMensajeAlAsesor(conv, plataforma, ultimo);
     return;
   }
 
@@ -390,6 +403,47 @@ async function pedirAlSitio(cuerpo: unknown): Promise<RespuestaSitio> {
     visita: d.visita ?? null,
     publica: typeof d.publica === "string" && d.publica.trim() ? d.publica.trim().slice(0, 1500) : null,
   };
+}
+
+/** Hasta cuánto después del mensaje del cliente se avisa (los barridos de cada 10 min traen mensajes más viejos y no deben repetir el push). */
+const AVISO_MENSAJE_RECIENTE_MS = 2 * 60 * 1000;
+
+/**
+ * El cliente escribió mientras lo atiende una persona (Ali derivó o un asesor
+ * respondió hace poco): push al asesor del lead, como en el chat web. Sin
+ * asesor (o si el lead sigue a cargo de Ali), a la rueda. Nunca lanza.
+ */
+async function avisarMensajeAlAsesor(
+  conv: {
+    id: string;
+    leadId: string | null;
+    metaName: string | null;
+    lead: { firstName: string | null; lastName: string | null; assignedToId: string | null } | null;
+  },
+  plataforma: keyof typeof RED,
+  ultimo: MensajeBase
+) {
+  try {
+    if (Date.now() - ultimo.createdAt.getTime() > AVISO_MENSAJE_RECIENTE_MS) return;
+    const dueno = conv.lead?.assignedToId;
+    const destinatarios = dueno && dueno !== DUENO_MIENTRAS_ALI ? [dueno] : ASESORES_ANUNCIABLES;
+    const nombre = [conv.lead?.firstName, conv.lead?.lastName].filter(Boolean).join(" ") || conv.metaName || "Un cliente";
+    const texto = ultimo.text.length > 120 ? `${ultimo.text.slice(0, 117)}...` : ultimo.text;
+    await Promise.allSettled(
+      destinatarios.map((userId) =>
+        createNotification({
+          userId,
+          title: `💬 ${nombre} escribió por ${RED[plataforma]}`,
+          body: texto,
+          // Mismo tipo que los demás avisos del chat: los APK descartan los tipos que no conocen.
+          type: "NEW_LEAD",
+          leadId: conv.leadId || undefined,
+        })
+      )
+    );
+  } catch (error) {
+    console.error(`[ali-redes] No salió el push del mensaje de ${conv.id}:`, error);
+  }
 }
 
 async function asesorEscribioDesde(conversationId: string, desde: Date) {
