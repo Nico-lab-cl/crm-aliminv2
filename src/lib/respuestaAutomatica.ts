@@ -370,6 +370,16 @@ export async function responderAutomatico(e: Entrada, opciones: OpcionesRespuest
       conversationId: e.conversationId,
       conAli: opciones.conAli,
     });
+    if (!p && e.via === "comentario") {
+      // Comentarios delicados (desconfianza, "estafa", reclamo, insulto): no se
+      // responden ni en público ni por privado, y NO se avisa a los asesores
+      // (Nicolás, 16-11-2026: el aviso al grupo generaba desconfianza, los
+      // asesores no sabían qué responder y no deben responder comentarios de
+      // redes). Queda solo una nota en la conversación, que no entra a la bandeja.
+      await anotar(e.conversationId, `Comentario delicado en ${red}: no se respondió ni se avisó a los asesores (decisión del 16-11-2026).`);
+      oficinaDice("ali", `Leí ${que} de ${red}: lo dejo sin responder`);
+      return { categoria, enviado: false };
+    }
     if (!p) {
       // Antes era solo una nota que nadie veía: ahora entra a la bandeja y avisa
       // al asesor (revisión Elephant Goldfish, 15-11-2026).
