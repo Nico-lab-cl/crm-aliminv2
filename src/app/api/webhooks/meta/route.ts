@@ -348,9 +348,15 @@ async function yaGuardado(sourceId?: string | null) {
  * Adjuntos de un DM (audio, foto, video). Se guarda el primero como texto
  * entre corchetes y su URL de Meta, para que el asesor y Ali sepan que llegó.
  */
-function describirAdjunto(adjuntos?: Array<{ type?: string; payload?: { url?: string } }>) {
+function describirAdjunto(adjuntos?: Array<{ type?: string; payload?: { url?: string; sticker_id?: number | string } }>) {
   const a = adjuntos?.[0];
   if (!a) return null;
+  // El 👍 de Messenger (y cualquier sticker) llega como imagen con sticker_id:
+  // se guarda como texto, sin la imagen, para que Ali no la tenga que ver.
+  if (a.payload?.sticker_id) {
+    const like = ["369239263222822", "369239343222814", "369239383222810"].includes(String(a.payload.sticker_id));
+    return { texto: like ? "👍" : "[Sticker]", url: null };
+  }
   const textos: Record<string, string> = { audio: "[Audio]", image: "[Imagen]", video: "[Video]", file: "[Archivo]" };
   return { texto: textos[a.type || ""] || "[Adjunto]", url: a.payload?.url || null };
 }
