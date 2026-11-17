@@ -390,10 +390,19 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
             console.error("Error formatting date", e);
           }
 
-          // El tipo del adjunto viene de la tabla MessageMedia. Los mensajes
-          // antiguos de Instagram solo tienen mediaUrl y siempre son imágenes,
-          // así que ese es el valor por omisión.
-          const tipoAdjunto = msg.media?.kind || (msg.mediaUrl ? "image" : null);
+          // El tipo del adjunto viene de la tabla MessageMedia. Sin ella, lo que
+          // tiene mediaUrl es una imagen, salvo los audios y videos de Instagram/Facebook llegan con la URL de Meta y
+          // el texto "[Audio]"/"[Video]" (o la transcripción "🎤 (audio) …").
+          const textoMsg = String(msg.text || "");
+          const tipoAdjunto =
+            msg.media?.kind ||
+            (msg.mediaUrl
+              ? /^(\[audio\]|🎤)/i.test(textoMsg)
+                ? "audio"
+                : /^\[video\]/i.test(textoMsg)
+                  ? "video"
+                  : "image"
+              : null);
 
           return (
             <div key={msg.id || i} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>

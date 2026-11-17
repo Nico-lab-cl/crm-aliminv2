@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import prisma from "@/lib/prisma";
 import { loEnvioLaRespuestaAuto } from "@/lib/respuestaAutomatica";
 import { atenderMeta, type AvisoMeta } from "@/lib/aliRedes";
+import { transcribirMensaje, transcripcionActiva } from "@/lib/transcribir";
 
 // Configuración de Meta Webhook (Configura estas en tu .env)
 const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
@@ -61,6 +62,8 @@ export async function POST(req: Request) {
     // Respuestas automáticas a disparar cuando todo quede guardado. Corren
     // después de devolver el 200, para que Meta no reintente por demora.
     const pendientes: AvisoMeta[] = [];
+    // Audios del cliente que se transcriben antes de que responda Ali (lib/transcribir.ts).
+    const audios: { mid: string; url: string }[] = [];
 
     if (body.object === "page" || body.object === "instagram") {
       for (const entry of body.entry) {
@@ -83,6 +86,7 @@ export async function POST(req: Request) {
               // Sin texto, el adjunto queda como "[Audio]", "[Imagen]"…: antes se descartaba.
               const texto = webhookEvent.message.text || adjunto?.texto || "";
               const r = await handleIncomingMessage(psid, texto, platform, "DIRECT", mid, undefined, undefined, undefined, senderType as "meta" | "advisor", undefined, adjunto?.url || null);
+              if (!isEcho && texto === "[Audio]" && adjunto?.url && transcripcionActiva()) audios.push({ mid, url: adjunto.url });
               if (!isEcho) {
                 // Todos los mensajes del cliente: atenderMeta decide si responde
                 // Ali o la plantilla (que solo contesta el primero con texto).
@@ -165,9 +169,11 @@ export async function POST(req: Request) {
           }
         }
       }
-      if (pendientes.length) {
+      if (pendientes.length || audios.length) {
         // Uno tras otro: dos avisos de la misma persona no deben cruzarse.
+        // Primero los audios a texto, para que Ali lea lo que dijo el cliente.
         setImmediate(async () => {
+          for (const a of audios) await transcribirMensaje(a.mid, a.url);
           for (const p of pendientes) await atenderMeta(p);
         });
       }

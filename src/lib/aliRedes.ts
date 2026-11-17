@@ -6,7 +6,7 @@ import { ASESORES_ANUNCIABLES, enviarAlGrupo } from "./avisosWhatsappLeads";
 import { memoriaDelLead } from "./memoriaLead";
 import { agenteParaLead } from "./agenteIA";
 import { oficinaDice } from "./oficina";
-import { aliWhatsappActiva, enviarTextoWhatsapp, marcarLeidoWhatsapp, waIdDePsid } from "./whatsapp";
+import { aliWhatsappActiva, enviarArchivoWhatsapp, enviarTextoWhatsapp, marcarLeidoWhatsapp, waIdDePsid } from "./whatsapp";
 import {
   AUTO_SOURCE,
   EVENTO_SOURCE,
@@ -209,8 +209,60 @@ interface RespuestaSitio {
   contacto: { nombre: string | null; telefono: string | null; email: string | null; interes: string | null } | null;
   derivacion: { motivo: string; resumen: string } | null;
   visita: { proyecto: string; fecha: string; hora: string } | null;
-  /** Texto para responder en público bajo el comentario, con los precios reales. */
+  /** Texto para responder en público bajo el comentario (sin precios). */
   publica: string | null;
+  /** Planos, brochures y ebooks que Ali eligió mandar después de sus mensajes. */
+  documentos: DocumentoAli[];
+}
+
+type DocumentoAli = { nombre: string; tipo: "pdf" | "imagen"; url: string };
+
+/** Solo archivos del propio sitio (/documentos/…): el CRM nunca manda una URL de afuera. */
+function documentosValidos(lista: unknown, base: string): DocumentoAli[] {
+  if (!Array.isArray(lista)) return [];
+  const sitios = [base, "https://aliminspa.cl"].map((s) => `${s.replace(/\/+$/, "")}/documentos/`);
+  return lista
+    .filter(
+      (d): d is DocumentoAli =>
+        Boolean(d) &&
+        typeof d.nombre === "string" &&
+        (d.tipo === "pdf" || d.tipo === "imagen") &&
+        typeof d.url === "string" &&
+        sitios.some((s) => d.url.startsWith(s))
+    )
+    .slice(0, 3)
+    .map((d) => ({ nombre: d.nombre.slice(0, 80), tipo: d.tipo, url: d.url }));
+}
+
+/**
+ * Manda los documentos uno por uno después de los mensajes y los guarda como
+ * "📎 <nombre>" (las imágenes con su URL, para verlas en la bandeja). Un
+ * archivo que falla no corta los demás ni la respuesta.
+ */
+async function enviarDocumentos(
+  conversationId: string,
+  documentos: DocumentoAli[],
+  enviar: (d: DocumentoAli) => Promise<string | null>
+) {
+  for (const d of documentos) {
+    try {
+      await dormir(PAUSA_ENTRE_BURBUJAS_MS);
+      const id = await enviar(d);
+      await (prisma as any).message.create({
+        data: {
+          conversationId,
+          text: `📎 ${d.nombre}${d.tipo === "pdf" ? " (PDF)" : ""}`,
+          senderType: ALI_SENDER,
+          sourceType: "DIRECT",
+          sourceId: id || null,
+          mediaUrl: d.tipo === "imagen" ? d.url : null,
+        },
+      });
+    } catch (error) {
+      console.error(`[ali-redes] No se pudo mandar ${d.nombre}:`, error);
+      await anotarFalla(conversationId, `no se pudo mandar ${d.nombre}`);
+    }
+  }
 }
 
 type MensajeBase = { text: string; senderType: string; sourceType: string; mediaUrl: string | null; createdAt: Date };
@@ -366,10 +418,13 @@ async function responder(a: AvisoMeta) {
       const id = await enviarTextoWhatsapp(waId, r.burbujas[i]);
       await guardar(conversationId, r.burbujas[i], id, fuente(i, r.burbujas.length));
     }
+    await enviarDocumentos(conversationId, r.documentos, (d) => enviarArchivoWhatsapp(waId, d));
   } else if (viaComentario && a.commentId) {
     // Meta permite un solo mensaje privado por comentario hasta que la persona
     // conteste: las burbujas van juntas en uno.
-    const texto = r.burbujas.join("\n\n");
+    // Con un solo mensaje no caben adjuntos: los documentos van como enlace.
+    const enlaces = r.documentos.map((d) => `📎 ${d.nombre} ${d.url}`).join("\n");
+    const texto = [r.burbujas.join("\n\n"), enlaces].filter(Boolean).join("\n\n");
     const privado = await graph("/me/messages", { recipient: { comment_id: a.commentId }, message: { text: texto } });
     recordar(privado.message_id);
     conversationId = await unirConChat(conv.id, privado.recipient_id);
@@ -390,6 +445,27 @@ async function responder(a: AvisoMeta) {
       recordar(msg.message_id);
       await guardar(conversationId, r.burbujas[i], msg.message_id, fuente(i, r.burbujas.length));
     }
+    await enviarDocumentos(conversationId, r.documentos, async (d) => {
+      try {
+        const msg = await graph("/me/messages", {
+          recipient: { id: conv.psid },
+          messaging_type: "RESPONSE",
+          message: { attachment: { type: d.tipo === "imagen" ? "image" : "file", payload: { url: d.url, is_reusable: true } } },
+        });
+        recordar(msg.message_id);
+        return msg.message_id as string;
+      } catch (error) {
+        // Instagram no siempre acepta PDF como adjunto: va el enlace.
+        console.error(`[ali-redes] ${d.nombre} no salió como adjunto en ${plataforma}, va como enlace:`, error);
+        const msg = await graph("/me/messages", {
+          recipient: { id: conv.psid },
+          messaging_type: "RESPONSE",
+          message: { text: `📎 ${d.nombre} ${d.url}` },
+        });
+        recordar(msg.message_id);
+        return msg.message_id as string;
+      }
+    });
   }
 
   const leadId =
@@ -422,6 +498,7 @@ async function pedirAlSitio(cuerpo: unknown): Promise<RespuestaSitio> {
     derivacion: d.derivacion ?? null,
     visita: d.visita ?? null,
     publica: typeof d.publica === "string" && d.publica.trim() ? d.publica.trim().slice(0, 1500) : null,
+    documentos: documentosValidos(d.documentos, base),
   };
 }
 

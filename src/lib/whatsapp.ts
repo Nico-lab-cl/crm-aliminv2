@@ -66,6 +66,21 @@ export async function enviarTextoWhatsapp(waId: string, texto: string): Promise<
   return d.messages?.[0]?.id ?? null;
 }
 
+/** Manda una imagen o un PDF por URL pública (planos, brochures). Devuelve el wamid. */
+export async function enviarArchivoWhatsapp(
+  waId: string,
+  archivo: { nombre: string; tipo: "pdf" | "imagen"; url: string }
+): Promise<string | null> {
+  const d = await llamar({
+    recipient_type: "individual",
+    to: waId.replace(/\D/g, ""),
+    ...(archivo.tipo === "imagen"
+      ? { type: "image", image: { link: archivo.url, caption: archivo.nombre } }
+      : { type: "document", document: { link: archivo.url, filename: `${archivo.nombre} - Alimin.pdf` } }),
+  });
+  return d.messages?.[0]?.id ?? null;
+}
+
 /** Marca el mensaje del cliente como leído y muestra "escribiendo…" mientras Ali piensa. Nunca lanza. */
 export async function marcarLeidoWhatsapp(mensajeId: string) {
   try {
