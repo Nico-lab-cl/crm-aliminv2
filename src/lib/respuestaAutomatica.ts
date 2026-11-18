@@ -350,7 +350,10 @@ export async function responderAutomatico(e: Entrada, opciones: OpcionesRespuest
   const red = e.plataforma === "instagram" ? "Instagram" : "Facebook";
   const que = e.via === "comentario" ? "un comentario" : "un mensaje";
   try {
-    if (await yaAtendida(e.conversationId)) {
+    // Ya se le respondió en los últimos 7 días. Un DM no se repite; un
+    // comentario nuevo sí se responde, sin repetir el brochure (más abajo).
+    const repetido = await yaAtendida(e.conversationId);
+    if (repetido && (e.via !== "comentario" || !e.commentId)) {
       console.log(`[auto] ${e.conversationId}: ya tuvo respuesta de asesor o automática en ${DIAS_ENTRE_RESPUESTAS} días, no respondo.`);
       return nada;
     }
@@ -393,6 +396,8 @@ export async function responderAutomatico(e: Entrada, opciones: OpcionesRespuest
       oficinaDice("ali", `Dejé ${que} de ${red} para una persona`);
       return { categoria, enviado: false };
     }
+
+    if (repetido && e.commentId) return await responderComentarioRepetido(e, categoria, red);
 
     let conversationId = e.conversationId;
 
@@ -453,6 +458,48 @@ export async function responderAutomatico(e: Entrada, opciones: OpcionesRespuest
  * ninguno puede, el error de Meta queda como nota en la conversación para verlo
  * sin abrir los logs. Nunca lanza.
  */
+/**
+ * Alguien que ya recibió el mensaje automático (o habló con un asesor) en los
+ * últimos 7 días vuelve a comentar (Luis Pardo, 18-11-2026: comentó en 4
+ * publicaciones y la página no le contestó, porque no vio el privado). Ahora:
+ * - En público, siempre: que revise sus mensajes. Ningún comentario queda sin respuesta a la vista.
+ * - Por privado, un recordatorio corto sin repetir el brochure, como máximo
+ *   una vez cada 24 h por persona (el que comenta 10 veces no recibe 10 mensajes).
+ */
+async function responderComentarioRepetido(e: Entrada, categoria: Categoria, red: string): Promise<ResultadoRespuesta> {
+  const n = (e.nombre || "").trim().split(/\s+/)[0];
+  const nombre = n && !/[_.\d@]/.test(n) && n.length <= 20 ? ` ${n}` : "";
+  const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const reciente = await (prisma as any).message.findFirst({
+    where: { conversationId: e.conversationId, senderType: ALI_SENDER, sourceType: AUTO_SOURCE, createdAt: { gte: hace24h } },
+    select: { id: true },
+  });
+
+  let conversationId = e.conversationId;
+  if (!reciente) {
+    const texto = `Hola${nombre} 👋 Te dejé la información por aquí, en este chat 👆\n\n¿Qué te gustaría saber? Te respondo al tiro.`;
+    const privado = await graph("/me/messages", { recipient: { comment_id: e.commentId }, message: { text: texto } });
+    recordar(privado.message_id);
+    conversationId = await unirConChat(e.conversationId, privado.recipient_id);
+    await guardar(conversationId, texto, privado.message_id);
+  }
+  await responderEnPublico(
+    e.commentId as string,
+    e.plataforma,
+    conversationId,
+    `¡Hola${nombre}! Te escribimos por interno 📩 Revisa tus mensajes, ahí está toda la información.`
+  );
+  await anotar(
+    conversationId,
+    reciente
+      ? "Volvió a comentar: solo respuesta pública (ya se le escribió por privado en las últimas 24 h)."
+      : "Volvió a comentar: respuesta pública y recordatorio por privado (sin repetir el brochure)."
+  );
+  console.log(`[auto] ${e.conversationId}: comentario repetido (${categoria}), ${reciente ? "solo público" : "público + recordatorio privado"}.`);
+  oficinaDice("ali", `Respondí un comentario repetido de ${red}`);
+  return { categoria, enviado: true };
+}
+
 export async function responderEnPublico(
   commentId: string,
   plataforma: "instagram" | "facebook",
