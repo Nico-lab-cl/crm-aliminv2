@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import prisma from "@/lib/prisma";
 import { atenderWhatsapp, vincularLeadWhatsapp } from "@/lib/aliRedes";
 import { anotar } from "@/lib/respuestaAutomatica";
+import { transcribirAudioWhatsapp, transcripcionActiva } from "@/lib/transcribir";
 import {
   WA_PLATFORM,
   describirMensajeWhatsapp,
@@ -61,6 +62,8 @@ export async function POST(req: Request) {
 
     const nuestro = process.env.WHATSAPP_PHONE_NUMBER_ID;
     const pendientes: { conversationId: string; mensajeId: string; publicacion: string | null }[] = [];
+    // Audios que se transcriben antes de que responda Ali (lib/transcribir.ts).
+    const audios: { wamid: string; mediaId: string }[] = [];
 
     for (const entry of body.entry ?? []) {
       for (const cambio of (entry.changes ?? []) as Cambio[]) {
@@ -109,6 +112,7 @@ export async function POST(req: Request) {
           }
           if (nueva || !conv.leadId) await vincularLeadWhatsapp(conv.id, m.from, nombre);
 
+          if (m.type === "audio" && m.audio?.id && transcripcionActiva()) audios.push({ wamid: m.id, mediaId: m.audio.id });
           pendientes.push({ conversationId: conv.id, mensajeId: m.id, publicacion: anuncio });
         }
       }
@@ -116,6 +120,7 @@ export async function POST(req: Request) {
 
     if (pendientes.length) {
       setImmediate(async () => {
+        for (const a of audios) await transcribirAudioWhatsapp(a.wamid, a.mediaId);
         for (const p of pendientes) await atenderWhatsapp(p.conversationId, p.mensajeId, p.publicacion);
       });
     }

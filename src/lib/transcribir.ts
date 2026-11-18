@@ -41,16 +41,34 @@ const EXTENSION: Record<string, string> = {
   "video/mp4": "mp4",
 };
 
-/** Descarga el audio y devuelve lo que dice, o null si no se pudo. */
-export async function transcribirAudio(url: string): Promise<string | null> {
+export const PREFIJO_AUDIO = PREFIJO;
+
+/** Descarga el audio (con cabeceras si la URL las pide) y devuelve lo que dice, o null. */
+export async function transcribirAudio(url: string, cabeceras?: Record<string, string>): Promise<string | null> {
+  if (!process.env.OPENAI_API_KEY) return null;
+  try {
+    const audio = await fetch(url, { headers: cabeceras, signal: AbortSignal.timeout(20000) });
+    if (!audio.ok) throw new Error(`descarga ${audio.status}`);
+    const tipo = (audio.headers.get("content-type") || "audio/mp4").split(";")[0].trim().toLowerCase();
+    return await transcribirBytes(await audio.arrayBuffer(), tipo);
+  } catch (error) {
+    console.error("[transcribir] No se pudo descargar el audio:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+/**
+ * Transcribe un audio que ya está en memoria (chat web, chat de prueba de
+ * Ali): devuelve lo que dice, o null si no se pudo. Nunca lanza.
+ */
+export async function transcribirBytes(datos: ArrayBuffer | Uint8Array, tipoCrudo: string): Promise<string | null> {
   const clave = process.env.OPENAI_API_KEY;
   if (!clave) return null;
   try {
-    const audio = await fetch(url, { signal: AbortSignal.timeout(20000) });
-    if (!audio.ok) throw new Error(`descarga ${audio.status}`);
-    const tipo = (audio.headers.get("content-type") || "audio/mp4").split(";")[0].trim().toLowerCase();
-    const buf = await audio.arrayBuffer();
+    // Copia a un ArrayBuffer propio: Blob no acepta vistas sobre SharedArrayBuffer.
+    const buf = new Uint8Array(datos instanceof Uint8Array ? datos : new Uint8Array(datos));
     if (!buf.byteLength || buf.byteLength > MAX_BYTES) throw new Error(`tamaño ${buf.byteLength}`);
+    const tipo = (tipoCrudo || "audio/mp4").split(";")[0].trim().toLowerCase();
 
     const form = new FormData();
     form.append("file", new Blob([buf], { type: tipo }), `audio.${EXTENSION[tipo] || "m4a"}`);
@@ -87,4 +105,33 @@ export async function transcribirMensaje(sourceId: string, url: string): Promise
   });
   console.log(`[transcribir] Audio ${sourceId} transcrito (${texto.length} caracteres).`);
   return texto;
+}
+
+/**
+ * Audio de WhatsApp (Cloud API): primero se pide la URL del archivo con su id
+ * y después se descarga con el mismo token. Deja el texto en el mensaje.
+ */
+export async function transcribirAudioWhatsapp(wamid: string, mediaId: string): Promise<string | null> {
+  const token = process.env.WHATSAPP_TOKEN;
+  if (!transcripcionActiva() || !token) return null;
+  try {
+    const version = process.env.WHATSAPP_API_VERSION || "v25.0";
+    const res = await fetch(`https://graph.facebook.com/${version}/${mediaId}`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    const d = (await res.json().catch(() => ({}))) as { url?: string };
+    if (!res.ok || !d.url) throw new Error(`media ${res.status}`);
+    const texto = await transcribirAudio(d.url, { authorization: `Bearer ${token}` });
+    if (!texto) return null;
+    await (prisma as any).message.updateMany({
+      where: { sourceId: wamid, text: "[Audio]" },
+      data: { text: `${PREFIJO} ${texto}`.slice(0, 4000) },
+    });
+    console.log(`[transcribir] Audio de WhatsApp ${wamid} transcrito (${texto.length} caracteres).`);
+    return texto;
+  } catch (error) {
+    console.error("[transcribir] No se pudo transcribir el audio de WhatsApp:", error instanceof Error ? error.message : error);
+    return null;
+  }
 }

@@ -10,6 +10,7 @@ import {
 } from "@/lib/web-chat";
 import { avisarMensajeDelVisitante } from "@/lib/ali";
 import { ErrorDeAdjunto, crearMensajeConAdjunto, textoPorDefecto, validarAdjunto } from "@/lib/media";
+import { PREFIJO_AUDIO, transcribirBytes, transcripcionActiva } from "@/lib/transcribir";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,16 @@ export async function POST(req: Request) {
       durationMs: Number.isFinite(duracionRaw) ? duracionRaw : null,
       fileName: (form.get("file") as File)?.name || null,
     });
+
+    // Audio sin texto: se transcribe aquí mismo, antes de responder, para que
+    // Ali (que corre en el sitio apenas vuelve esta respuesta) lea lo que dijo.
+    if (adjunto.kind === "audio" && !texto && transcripcionActiva()) {
+      const dicho = await transcribirBytes(adjunto.bytes, adjunto.mimeType);
+      if (dicho) {
+        resultado.text = `${PREFIJO_AUDIO} ${dicho}`.slice(0, 4000);
+        await prisma.message.update({ where: { id: resultado.id }, data: { text: resultado.text } });
+      }
+    }
 
     await prisma.conversation.update({
       where: { id: conversation.id },

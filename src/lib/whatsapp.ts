@@ -144,6 +144,7 @@ export interface WhatsappMensaje {
   button?: { text?: string };
   interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
   image?: { caption?: string };
+  audio?: { id?: string; mime_type?: string };
   /** Si llegó desde un anuncio de clic a WhatsApp. */
   referral?: { source_url?: string; source_id?: string; source_type?: string; headline?: string; body?: string; ctwa_clid?: string };
 }
