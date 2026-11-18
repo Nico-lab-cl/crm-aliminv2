@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getNextAdvisorId } from "@/lib/assignment";
 import {
   WEB_CHAT_PLATFORM,
   checkWebChatKey,
@@ -79,6 +80,13 @@ export async function POST(req: Request) {
       });
     }
 
+    // El lead sin asesor entra a la rueda como cualquier lead de la web
+    // (17-11-2026). Antes quedaba sin dueño y se lo llevaba el primero que
+    // respondía, y así casi siempre le tocaba a la misma persona. Si el
+    // contacto ya tenía asesor, lo conserva.
+    const previo = await prisma.lead.findUnique({ where: { email }, select: { assignedToId: true } });
+    const asesorRueda = previo?.assignedToId ? null : await getNextAdvisorId(undefined, "Chat web aliminspa.cl");
+
     // El correo es único en Lead: si el contacto ya existe se actualiza sin
     // tocar al asesor asignado ni el estado comercial que ya tenga.
     const lead = await prisma.lead.upsert({
@@ -96,6 +104,7 @@ export async function POST(req: Request) {
         utmCampaign: body.utm_campaign || null,
         utmContent: body.utm_content || null,
         utmTerm: body.utm_term || null,
+        assignedToId: asesorRueda,
       },
       update: {
         firstName,
@@ -103,6 +112,7 @@ export async function POST(req: Request) {
         phone,
         preferredChannel: "Chat web",
         lastActivity: "Abrió el chat web",
+        ...(asesorRueda ? { assignedToId: asesorRueda } : {}),
       },
     });
 

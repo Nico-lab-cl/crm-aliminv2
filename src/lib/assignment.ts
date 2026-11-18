@@ -55,43 +55,72 @@ export function isWithinAssignmentWindow(): boolean {
   return true;
 }
 
-function gcd(a: number, b: number): number {
-  return b === 0 ? a : gcd(b, a % b);
+/**
+ * La rueda guarda su propio estado en una fila de IntegrationToken (igual que
+ * el token de Instagram), con dos cosas por asesor:
+ *
+ * - `actual`: el puntaje del reparto ponderado "suave" (el de nginx). En cada
+ *   turno cada candidato suma su peso, se elige al de mayor puntaje y a ese se
+ *   le resta la suma de los pesos. Con 35/35/30 sale M,O,B,M,O,B... y nunca
+ *   el mismo dos veces seguidas, y si alguien vuelve de vacaciones no le cae
+ *   una avalancha (el puntaje nunca se aleja mas de un turno).
+ * - `entregados`: cuantos leads le ha dado la rueda a cada uno, para revisar.
+ *
+ * Antes el turno se sacaba contando TODOS los leads de los asesores, y cada
+ * lead creado a mano por un asesor, tomado del chat web o reasignado le movia
+ * el turno a la rueda: podian caerle dos o tres seguidos a la misma persona
+ * (caso de Marcela, 17-11-2026). Ahora solo la rueda mueve la rueda.
+ */
+const RUEDA = "rueda_asesores";
+
+type EstadoRueda = { actual: Record<string, number>; entregados: Record<string, number> };
+
+function leerEstado(texto: string | null | undefined): EstadoRueda {
+  try {
+    const e = JSON.parse(texto || "{}");
+    return { actual: e.actual || {}, entregados: e.entregados || {} };
+  } catch {
+    return { actual: {}, entregados: {} };
+  }
+}
+
+/** Elige al siguiente y deja el estado actualizado. Funcion pura, para poder probarla. */
+export function siguienteTurno(candidatos: string[], estado: EstadoRueda): string {
+  const total = candidatos.reduce((s, id) => s + (ADVISOR_WEIGHTS[id] ?? 0), 0);
+  let elegido = candidatos[0];
+  let mejor = -Infinity;
+  for (const id of candidatos) {
+    estado.actual[id] = (estado.actual[id] ?? 0) + (ADVISOR_WEIGHTS[id] ?? 0);
+    if (estado.actual[id] > mejor) {
+      mejor = estado.actual[id];
+      elegido = id;
+    }
+  }
+  estado.actual[elegido] -= total;
+  estado.entregados[elegido] = (estado.entregados[elegido] ?? 0) + 1;
+  return elegido;
 }
 
 /**
- * Arma el ciclo de turnos que respeta los pesos: con 35/35/30 devuelve 20 turnos,
- * 7 de Marcela, 7 de Orlando y 6 de Barbara. Los reparte lo mas parejo posible (M,O,B,M,O,B,...)
- * en vez de dar 7 seguidos a cada uno, para que ningun asesor quede sin leads
- * durante media jornada.
+ * Toma el turno con la fila bloqueada (SELECT ... FOR UPDATE): si entran dos
+ * leads al mismo tiempo, el segundo espera al primero y nunca les toca el
+ * mismo turno.
  */
-function buildRotation(advisors: { id: string; name: string }[]): string[] {
-  const weights = advisors.map(a => ADVISOR_WEIGHTS[a.id] ?? 0);
-  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-
-  // Sin pesos configurados caemos a un round robin parejo.
-  if (totalWeight <= 0) return advisors.map(a => a.id);
-
-  const slots = totalWeight / weights.reduce((acc, w) => gcd(acc, w), 0);
-  const given = advisors.map(() => 0);
-  const rotation: string[] = [];
-
-  for (let slot = 0; slot < slots; slot++) {
-    let best = 0;
-    let bestDeficit = -Infinity;
-    for (let i = 0; i < advisors.length; i++) {
-      // Cuantos turnos le deberian tocar a estas alturas del ciclo menos los que ya lleva.
-      const deficit = (weights[i] / totalWeight) * (slot + 1) - given[i];
-      if (deficit > bestDeficit + 1e-9) {
-        bestDeficit = deficit;
-        best = i;
-      }
-    }
-    given[best]++;
-    rotation.push(advisors[best].id);
-  }
-
-  return rotation;
+async function tomarTurno(candidatos: string[]): Promise<string> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`
+      INSERT INTO "IntegrationToken" (id, platform, "accessToken", "updatedAt")
+      VALUES (${`rueda-${Date.now()}`}, ${RUEDA}, '{}', NOW())
+      ON CONFLICT (platform) DO NOTHING`;
+    const filas = await tx.$queryRaw<{ accessToken: string }[]>`
+      SELECT "accessToken" FROM "IntegrationToken" WHERE platform = ${RUEDA} FOR UPDATE`;
+    const estado = leerEstado(filas[0]?.accessToken);
+    const elegido = siguienteTurno(candidatos, estado);
+    await tx.$executeRaw`
+      UPDATE "IntegrationToken" SET "accessToken" = ${JSON.stringify(estado)}, "updatedAt" = NOW()
+      WHERE platform = ${RUEDA}`;
+    return elegido;
+  });
 }
 
 export async function getNextAdvisorId(allowedIds?: string[], source?: string | null) {
@@ -126,20 +155,20 @@ export async function getNextAdvisorId(allowedIds?: string[], source?: string | 
       return MARCELA_EXCLUDED ? BARBARA_ID : MARCELA_ID;
     }
 
-    const rotation = buildRotation(targetAdvisors);
-
-    // 4. Posicion en el ciclo: cada asignacion suma exactamente un lead al grupo,
-    // asi que el total ya repartido nos dice que turno toca ahora.
-    const assignedCount = await (prisma as any).lead.count({
-      where: { assignedToId: { in: targetAdvisors.map(a => a.id) } }
-    });
-
-    const selectedId = rotation[assignedCount % rotation.length];
-
+    const selectedId = await tomarTurno(targetAdvisors.map(a => a.id));
+    const nombre = ADVISORS.find(a => a.id === selectedId)?.name;
+    console.log(`[Auto-Assignment] Rueda -> ${nombre} (${source || "sin origen"})`);
     return selectedId;
   } catch (error) {
     console.error("Error calculating next advisor:", error);
-    // Safe fallback: Barbara si Marcela esta excluida
-    return MARCELA_EXCLUDED ? BARBARA_ID : MARCELA_ID;
+    // Si la base falla, al azar segun los pesos: nunca todos a la misma persona.
+    const ids = ADVISORS.map(a => a.id).filter(id => (ADVISOR_WEIGHTS[id] ?? 0) > 0 && (!allowedIds || allowedIds.includes(id)));
+    if (ids.length === 0) return MARCELA_EXCLUDED ? BARBARA_ID : MARCELA_ID;
+    let r = Math.random() * ids.reduce((s, id) => s + ADVISOR_WEIGHTS[id], 0);
+    for (const id of ids) {
+      r -= ADVISOR_WEIGHTS[id];
+      if (r <= 0) return id;
+    }
+    return ids[ids.length - 1];
   }
 }
