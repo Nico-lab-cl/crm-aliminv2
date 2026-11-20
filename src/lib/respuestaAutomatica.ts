@@ -521,7 +521,7 @@ async function responderComentarioRepetido(e: Entrada, categoria: Categoria, red
 
   let conversationId = e.conversationId;
   if (!reciente) {
-    const texto = `Hola${nombre} 👋 Te dejé la información por aquí, en este chat 👆\n\n¿Qué te gustaría saber? Te respondo al tiro.`;
+    const texto = `Hola${nombre} 👋 Te dejé la información por aquí, en este chat 👆\n\n¿Qué te gustaría saber? 😊`;
     const privado = await graph("/me/messages", { recipient: { comment_id: e.commentId }, message: { text: texto } });
     recordar(privado.message_id);
     conversationId = await unirConChat(e.conversationId, privado.recipient_id);
