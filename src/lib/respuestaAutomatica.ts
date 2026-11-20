@@ -188,7 +188,20 @@ export interface Plantilla {
   /** Portada del brochure para mandar como imagen antes del texto (solo DM). */
   imagen: string | null;
   publica: string;
+  /** Botones de respuesta rápida bajo el texto (solo con Ali, que es quien los responde). */
+  botones?: string[];
 }
+
+/**
+ * Botones de respuesta rápida (prueba del 20-11-2026). Meta no dice si se
+ * pueden mandar en la respuesta privada a un comentario: si los rechaza, el
+ * mensaje se reenvía sin botones (enviarConBotones). Al tocar uno, al webhook
+ * llega como un mensaje de texto con el título y Ali lo responde como
+ * cualquier otro. Máximo 20 caracteres por título. Se apagan con
+ * RESPUESTA_AUTO_BOTONES=false.
+ */
+const BOTONES = ["💰 Precios", "📍 Ubicación", "📅 Agendar visita"];
+const botonesActivos = () => process.env.RESPUESTA_AUTO_BOTONES !== "false";
 
 export function plantilla(
   categoria: Categoria,
@@ -197,9 +210,13 @@ export function plantilla(
   const l = (ruta: string) => enlace(ruta, ctx.plataforma, ctx.via, categoria, ctx.conversationId);
   const hola = saludo(ctx.nombre);
   // Con Ali encendida (aliRedes.ts) la conversación sigue con ella, no con un asesor.
+  // Con Ali, una pregunta concreta para que responda (el enlace ya trae todo y
+  // casi nadie escribía: 3% en Facebook, análisis del 20-11-2026). Calza con o
+  // sin botones.
   const cierre = ctx.conAli
-    ? "Si tienes cualquier duda, escríbenos por aquí mismo y con gusto te ayudamos 😊"
+    ? "¿Qué te gustaría saber primero? 👇"
     : "¿Tienes alguna duda? Escríbenos por aquí mismo y un asesor te responde 😊";
+  const botones = ctx.conAli && botonesActivos() ? BOTONES : undefined;
   const cierreVisita = ctx.conAli
     ? "Si prefieres, escríbenos por aquí y con gusto te ayudamos a agendar tu visita 😊"
     : "Un asesor te escribe por aquí para coordinar 😊";
@@ -211,18 +228,21 @@ export function plantilla(
         texto: `${hola} Qué bueno que te interesó Lomas del Mar 🌲\nSon terrenos de 200 y 390 m² en El Tabo, cerca de la playa.\n\nPincha aquí para ver toda la información 👇\n${l("/brochure/lomas-del-mar")}\n\n${cierre}`,
         imagen: `${SITIO}/brochures/lomas-del-mar/portada.jpg`,
         publica,
+        botones,
       };
     case "arena":
       return {
         texto: `${hola} Qué bueno que te interesó Arena y Sol ☀️\nSon terrenos de 200 m² en El Tabo, cerca de la playa.\n\nPincha aquí para ver toda la información 👇\n${l("/brochure/arena-y-sol")}\n\n${cierre}`,
         imagen: `${SITIO}/brochures/arena-y-sol/portada.jpg`,
         publica,
+        botones,
       };
     case "general":
       return {
         texto: `${hola} Gracias por escribirnos.\nTenemos terrenos en El Tabo, cerca de la playa, en dos proyectos:\n\n🌲 Lomas del Mar (200 y 390 m²)\nPincha aquí para ver toda la información 👇\n${l("/brochure/lomas-del-mar")}\n\n☀️ Arena y Sol (200 m²)\nPincha aquí para ver toda la información 👇\n${l("/brochure/arena-y-sol")}\n\n${cierre}`,
         imagen: null,
         publica,
+        botones,
       };
     case "visita":
       return {
@@ -258,6 +278,30 @@ export async function graph(path: string, body: unknown, base = GRAPH, token = p
     throw new Error(`Meta ${d?.error?.code}/${d?.error?.error_subcode}: ${d?.error?.message || r.status}`);
   }
   return d;
+}
+
+/**
+ * Manda un texto con botones de respuesta rápida; si Meta los rechaza, lo
+ * reenvía sin botones para que nadie se quede sin respuesta. `botones` dice
+ * con qué salió de verdad.
+ */
+async function enviarConBotones(destino: Record<string, unknown>, texto: string, botones?: string[]) {
+  if (botones?.length) {
+    try {
+      const res = await graph("/me/messages", {
+        ...destino,
+        message: {
+          text: texto,
+          quick_replies: botones.map((title, i) => ({ content_type: "text", title, payload: `AUTO_BOTON_${i + 1}` })),
+        },
+      });
+      return { res, botones: true };
+    } catch (error) {
+      console.error("[auto] Meta rechazó los botones, reenvío sin botones:", error);
+    }
+  }
+  const res = await graph("/me/messages", { ...destino, message: { text: texto } });
+  return { res, botones: false };
 }
 
 /* ── Orquestación ──────────────────────────────────────────────────── */
@@ -400,14 +444,15 @@ export async function responderAutomatico(e: Entrada, opciones: OpcionesRespuest
     if (repetido && e.commentId) return await responderComentarioRepetido(e, categoria, red);
 
     let conversationId = e.conversationId;
+    // Con qué salió el mensaje: sirve para comparar cuántos responden con y sin botones.
+    let salioConBotones = false;
 
     if (e.via === "comentario" && e.commentId) {
       // 1. Mensaje privado. Meta devuelve el PSID/IGSID con que se abre el
       //    chat; en Facebook puede no ser el mismo id del comentario.
-      const privado = await graph("/me/messages", {
-        recipient: { comment_id: e.commentId },
-        message: { text: p.texto },
-      });
+      const envio = await enviarConBotones({ recipient: { comment_id: e.commentId } }, p.texto, p.botones);
+      const privado = envio.res;
+      salioConBotones = envio.botones;
       recordar(privado.message_id);
       conversationId = await unirConChat(e.conversationId, privado.recipient_id);
       await guardar(conversationId, p.texto, privado.message_id);
@@ -433,16 +478,15 @@ export async function responderAutomatico(e: Entrada, opciones: OpcionesRespuest
           console.error("[auto] No se pudo mandar la portada:", error);
         }
       }
-      const msg = await graph("/me/messages", {
-        recipient: { id: psid },
-        messaging_type: "RESPONSE",
-        message: { text: p.texto },
-      });
+      const envio = await enviarConBotones({ recipient: { id: psid }, messaging_type: "RESPONSE" }, p.texto, p.botones);
+      const msg = envio.res;
+      salioConBotones = envio.botones;
       recordar(msg.message_id);
       await guardar(conversationId, p.imagen ? `[Portada del brochure]\n\n${p.texto}` : p.texto, msg.message_id);
     }
 
-    await anotar(conversationId, `Respuesta automática enviada: ${NOMBRE_CATEGORIA[categoria]}.`);
+    const conBotones = p.botones?.length ? (salioConBotones ? " (con botones)" : " (sin botones: Meta los rechazó)") : "";
+    await anotar(conversationId, `Respuesta automática enviada: ${NOMBRE_CATEGORIA[categoria]}${conBotones}.`);
     oficinaDice("ali", `Respondí ${que} de ${red}`);
     return { categoria, enviado: true };
   } catch (error) {
