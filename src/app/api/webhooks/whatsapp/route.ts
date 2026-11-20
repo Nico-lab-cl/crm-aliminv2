@@ -7,6 +7,7 @@ import { transcribirAudioWhatsapp, transcripcionActiva } from "@/lib/transcribir
 import {
   WA_PLATFORM,
   describirMensajeWhatsapp,
+  numerosWhatsapp,
   psidWhatsapp,
   type WhatsappMensaje,
 } from "@/lib/whatsapp";
@@ -60,8 +61,8 @@ export async function POST(req: Request) {
     const body = JSON.parse(crudo);
     if (body.object !== "whatsapp_business_account") return new Response("Not Found", { status: 404 });
 
-    const nuestro = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    const pendientes: { conversationId: string; mensajeId: string; publicacion: string | null }[] = [];
+    const nuestros = numerosWhatsapp();
+    const pendientes: { conversationId: string; mensajeId: string; publicacion: string | null; desde: string | null }[] = [];
     // Audios que se transcriben antes de que responda Ali (lib/transcribir.ts).
     const audios: { wamid: string; mediaId: string }[] = [];
 
@@ -69,8 +70,9 @@ export async function POST(req: Request) {
       for (const cambio of (entry.changes ?? []) as Cambio[]) {
         if (cambio.field !== "messages" || !cambio.value) continue;
         const v = cambio.value;
-        // Solo el número de Ali (la cuenta puede tener otros).
-        if (nuestro && v.metadata?.phone_number_id && v.metadata.phone_number_id !== nuestro) continue;
+        // Solo los números que atiende Ali (WHATSAPP_PHONE_NUMBER_ID + WHATSAPP_OTROS_NUMEROS).
+        const numeroEmpresa = v.metadata?.phone_number_id || null;
+        if (nuestros.length && numeroEmpresa && !nuestros.includes(numeroEmpresa)) continue;
 
         for (const s of v.statuses ?? []) {
           if (s.status === "failed") {
@@ -84,7 +86,7 @@ export async function POST(req: Request) {
           if (await prisma.message.findFirst({ where: { sourceId: m.id }, select: { id: true } })) continue;
 
           const nombre = v.contacts?.find((c) => c.wa_id === m.from)?.profile?.name?.trim() || null;
-          const psid = psidWhatsapp(m.from);
+          const psid = psidWhatsapp(m.from, numeroEmpresa);
           let conv = await prisma.conversation.findUnique({ where: { psid } });
           const nueva = !conv;
           if (!conv) {
@@ -113,7 +115,7 @@ export async function POST(req: Request) {
           if (nueva || !conv.leadId) await vincularLeadWhatsapp(conv.id, m.from, nombre);
 
           if (m.type === "audio" && m.audio?.id && transcripcionActiva()) audios.push({ wamid: m.id, mediaId: m.audio.id });
-          pendientes.push({ conversationId: conv.id, mensajeId: m.id, publicacion: anuncio });
+          pendientes.push({ conversationId: conv.id, mensajeId: m.id, publicacion: anuncio, desde: numeroEmpresa });
         }
       }
     }
@@ -121,7 +123,7 @@ export async function POST(req: Request) {
     if (pendientes.length) {
       setImmediate(async () => {
         for (const a of audios) await transcribirAudioWhatsapp(a.wamid, a.mediaId);
-        for (const p of pendientes) await atenderWhatsapp(p.conversationId, p.mensajeId, p.publicacion);
+        for (const p of pendientes) await atenderWhatsapp(p.conversationId, p.mensajeId, p.publicacion, p.desde);
       });
     }
     return new Response("EVENT_RECEIVED", { status: 200 });

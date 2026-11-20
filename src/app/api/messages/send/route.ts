@@ -5,7 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { WEB_CHAT_PLATFORM } from "@/lib/web-chat";
 import { marcarContactado } from "@/lib/followups";
 import { asignarAlQueResponde, puedeVerConversacion } from "@/lib/ali";
-import { ErrorWhatsapp, WA_PLATFORM, enviarTextoWhatsapp, motivoRechazoWhatsapp, waIdDePsid } from "@/lib/whatsapp";
+import { ErrorWhatsapp, WA_PLATFORM, enviarTextoWhatsapp, motivoRechazoWhatsapp, numeroDePsid, waIdDePsid } from "@/lib/whatsapp";
 
 /**
  * Explica en palabras del asesor por qué Meta no dejó enviar el mensaje y qué
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     let idWhatsapp: string | null = null;
     if (conversation.platform === WA_PLATFORM) {
       try {
-        idWhatsapp = await enviarTextoWhatsapp(waIdDePsid(conversation.psid), text);
+        idWhatsapp = await enviarTextoWhatsapp(waIdDePsid(conversation.psid), text, numeroDePsid(conversation.psid));
       } catch (error) {
         const detalle = error instanceof ErrorWhatsapp ? error.detalle : null;
         console.error("Error de WhatsApp:", error);

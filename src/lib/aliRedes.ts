@@ -6,7 +6,7 @@ import { ASESORES_ANUNCIABLES, enviarAlGrupo } from "./avisosWhatsappLeads";
 import { memoriaDelLead } from "./memoriaLead";
 import { agenteParaLead } from "./agenteIA";
 import { oficinaDice } from "./oficina";
-import { aliWhatsappActiva, enviarArchivoWhatsapp, enviarTextoWhatsapp, marcarLeidoWhatsapp, waIdDePsid } from "./whatsapp";
+import { aliWhatsappActiva, enviarArchivoWhatsapp, enviarTextoWhatsapp, marcarLeidoWhatsapp, numeroDePsid, waIdDePsid } from "./whatsapp";
 import {
   AUTO_SOURCE,
   EVENTO_SOURCE,
@@ -410,15 +410,16 @@ async function responder(a: AvisoMeta) {
 
   if (plataforma === "whatsapp") {
     const waId = waIdDePsid(conv.psid);
+    const desde = numeroDePsid(conv.psid); // Responde desde el número al que escribió el cliente.
     for (let i = 0; i < r.burbujas.length; i++) {
       if (i > 0) {
         await dormir(PAUSA_ENTRE_BURBUJAS_MS);
         if (await asesorEscribioDesde(conv.id, inicio)) return;
       }
-      const id = await enviarTextoWhatsapp(waId, r.burbujas[i]);
+      const id = await enviarTextoWhatsapp(waId, r.burbujas[i], desde);
       await guardar(conversationId, r.burbujas[i], id, fuente(i, r.burbujas.length));
     }
-    await enviarDocumentos(conversationId, r.documentos, (d) => enviarArchivoWhatsapp(waId, d));
+    await enviarDocumentos(conversationId, r.documentos, (d) => enviarArchivoWhatsapp(waId, d, desde));
   } else if (viaComentario && a.commentId) {
     // Meta permite un solo mensaje privado por comentario hasta que la persona
     // conteste: las burbujas van juntas en uno.
@@ -980,10 +981,15 @@ function plataformasConAli(): string[] {
  * "escribiendo…" y responde con la misma espera de ráfaga que en IG/FB.
  * Nunca lanza: corre después del 200 a Meta.
  */
-export async function atenderWhatsapp(conversationId: string, mensajeId: string, publicacion: string | null) {
+export async function atenderWhatsapp(
+  conversationId: string,
+  mensajeId: string,
+  publicacion: string | null,
+  desde?: string | null
+) {
   try {
     if (!aliWhatsappActiva() || !process.env.IA_SECRET) return;
-    await marcarLeidoWhatsapp(mensajeId);
+    await marcarLeidoWhatsapp(mensajeId, desde);
     programar({ conversationId, plataforma: "whatsapp", via: "dm", texto: "", publicacion, nueva: false, conTexto: true });
   } catch (error) {
     console.error("[ali-whatsapp] Error atendiendo el mensaje:", error);

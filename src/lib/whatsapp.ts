@@ -7,7 +7,10 @@
  * Variables (EasyPanel → CRM móvil → Entorno):
  *   WHATSAPP_TOKEN            token permanente de un usuario del sistema con
  *                             whatsapp_business_messaging (lo pega una persona).
- *   WHATSAPP_PHONE_NUMBER_ID  identificador del número (WhatsApp Manager).
+ *   WHATSAPP_PHONE_NUMBER_ID  identificador del número principal (WhatsApp Manager).
+ *   WHATSAPP_OTROS_NUMEROS    identificadores de los demás números que atiende Ali,
+ *                             separados por coma (opcional). Desde 20-11-2026:
+ *                             1365363313337302 (+56 9 8257 9808).
  *   WHATSAPP_VERIFY_TOKEN     texto que se pone en la app de Meta al configurar
  *                             el webhook (si falta, META_VERIFY_TOKEN).
  *   ALI_WHATSAPP_ACTIVA       "false" apaga a Ali en WhatsApp (los mensajes se
@@ -18,9 +21,28 @@
 export const WA_PLATFORM = "whatsapp";
 const VERSION = process.env.WHATSAPP_API_VERSION || "v25.0";
 
-/** psid de la conversación: el número de WhatsApp del cliente con prefijo, para no chocar con los de Meta. */
-export const psidWhatsapp = (waId: string) => `wa:${waId.replace(/\D/g, "")}`;
-export const waIdDePsid = (psid: string) => psid.replace(/^wa:/, "");
+const numeroPrincipal = () => (process.env.WHATSAPP_PHONE_NUMBER_ID || "").trim();
+
+/** Todos los números de la empresa que atiende el CRM: el principal primero. */
+export function numerosWhatsapp(): string[] {
+  const otros = (process.env.WHATSAPP_OTROS_NUMEROS || "").split(",").map((n) => n.trim()).filter(Boolean);
+  return [numeroPrincipal(), ...otros].filter(Boolean);
+}
+
+/**
+ * psid de la conversación: el número de WhatsApp del cliente con prefijo, para
+ * no chocar con los de Meta. En el número principal queda "wa:<cliente>" (así
+ * eran todas antes de tener dos números); en los demás se agrega
+ * "@<id del número>", para que quien le escribe a los dos tenga dos chats y
+ * cada respuesta salga del número al que escribió.
+ */
+export const psidWhatsapp = (waId: string, numeroEmpresa?: string | null) => {
+  const cliente = `wa:${waId.replace(/\D/g, "")}`;
+  return numeroEmpresa && numeroEmpresa !== numeroPrincipal() ? `${cliente}@${numeroEmpresa}` : cliente;
+};
+export const waIdDePsid = (psid: string) => psid.replace(/^wa:/, "").replace(/@.*$/, "");
+/** Número de la empresa por el que va esa conversación (el principal si el psid no lo trae). */
+export const numeroDePsid = (psid: string) => psid.match(/@(\d+)$/)?.[1] || numeroPrincipal();
 
 export function whatsappConfigurado() {
   return Boolean(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
@@ -38,9 +60,9 @@ export class ErrorWhatsapp extends Error {
   }
 }
 
-async function llamar(cuerpo: Record<string, unknown>) {
+async function llamar(cuerpo: Record<string, unknown>, desde?: string | null) {
   const token = process.env.WHATSAPP_TOKEN;
-  const numero = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const numero = desde || numeroPrincipal();
   if (!token || !numero) throw new ErrorWhatsapp("WhatsApp no está configurado (faltan WHATSAPP_TOKEN o WHATSAPP_PHONE_NUMBER_ID).", null);
   const res = await fetch(`https://graph.facebook.com/${VERSION}/${numero}/messages`, {
     method: "POST",
@@ -55,36 +77,43 @@ async function llamar(cuerpo: Record<string, unknown>) {
   return d;
 }
 
-/** Manda un texto. Devuelve el id del mensaje en WhatsApp (wamid). */
-export async function enviarTextoWhatsapp(waId: string, texto: string): Promise<string | null> {
-  const d = await llamar({
-    recipient_type: "individual",
-    to: waId.replace(/\D/g, ""),
-    type: "text",
-    text: { body: texto.slice(0, 4000), preview_url: false },
-  });
+/** Manda un texto desde `desde` (id del número; el principal si falta). Devuelve el id del mensaje en WhatsApp (wamid). */
+export async function enviarTextoWhatsapp(waId: string, texto: string, desde?: string | null): Promise<string | null> {
+  const d = await llamar(
+    {
+      recipient_type: "individual",
+      to: waId.replace(/\D/g, ""),
+      type: "text",
+      text: { body: texto.slice(0, 4000), preview_url: false },
+    },
+    desde
+  );
   return d.messages?.[0]?.id ?? null;
 }
 
 /** Manda una imagen o un PDF por URL pública (planos, brochures). Devuelve el wamid. */
 export async function enviarArchivoWhatsapp(
   waId: string,
-  archivo: { nombre: string; tipo: "pdf" | "imagen"; url: string }
+  archivo: { nombre: string; tipo: "pdf" | "imagen"; url: string },
+  desde?: string | null
 ): Promise<string | null> {
-  const d = await llamar({
-    recipient_type: "individual",
-    to: waId.replace(/\D/g, ""),
-    ...(archivo.tipo === "imagen"
-      ? { type: "image", image: { link: archivo.url, caption: archivo.nombre } }
-      : { type: "document", document: { link: archivo.url, filename: `${archivo.nombre} - Alimin.pdf` } }),
-  });
+  const d = await llamar(
+    {
+      recipient_type: "individual",
+      to: waId.replace(/\D/g, ""),
+      ...(archivo.tipo === "imagen"
+        ? { type: "image", image: { link: archivo.url, caption: archivo.nombre } }
+        : { type: "document", document: { link: archivo.url, filename: `${archivo.nombre} - Alimin.pdf` } }),
+    },
+    desde
+  );
   return d.messages?.[0]?.id ?? null;
 }
 
 /** Marca el mensaje del cliente como leído y muestra "escribiendo…" mientras Ali piensa. Nunca lanza. */
-export async function marcarLeidoWhatsapp(mensajeId: string) {
+export async function marcarLeidoWhatsapp(mensajeId: string, desde?: string | null) {
   try {
-    await llamar({ status: "read", message_id: mensajeId, typing_indicator: { type: "text" } });
+    await llamar({ status: "read", message_id: mensajeId, typing_indicator: { type: "text" } }, desde);
   } catch (error) {
     console.warn("[whatsapp] No se pudo marcar como leído:", (error as Error).message);
   }
