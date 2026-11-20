@@ -206,6 +206,8 @@ async function correr(t: Turno) {
 
 interface RespuestaSitio {
   burbujas: string[];
+  /** Ali no respondió a propósito: la persona solo volvió a agradecer o reaccionar (Marcela, 20-11-2026). */
+  silencio?: boolean;
   contacto: { nombre: string | null; telefono: string | null; email: string | null; interes: string | null } | null;
   derivacion: { motivo: string; resumen: string } | null;
   visita: { proyecto: string; fecha: string; hora: string } | null;
@@ -400,6 +402,11 @@ async function responder(a: AvisoMeta) {
   await procesarContacto(conv.id, plataforma, r.contacto, mensajes.filter((m) => m.de === "cliente").map((m) => m.texto));
 
   if (!r.burbujas.length) {
+    // Silencio a propósito: no es una falla ni hay que avisar a una persona.
+    if (r.silencio && !r.derivacion) {
+      console.log(`[ali-redes] ${conv.id}: sin respuesta a propósito (solo agradeció o reaccionó).`);
+      return;
+    }
     await anotarFalla(conv.id, "la respuesta salió vacía");
     return;
   }
