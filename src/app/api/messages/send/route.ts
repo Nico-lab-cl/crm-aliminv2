@@ -6,6 +6,7 @@ import { WEB_CHAT_PLATFORM } from "@/lib/web-chat";
 import { marcarContactado } from "@/lib/followups";
 import { asignarAlQueResponde, puedeVerConversacion } from "@/lib/ali";
 import { ErrorWhatsapp, WA_PLATFORM, enviarTextoWhatsapp, motivoRechazoWhatsapp, numeroDePsid, waIdDePsid } from "@/lib/whatsapp";
+import { pausarSiCorresponde } from "@/lib/pausaAli";
 
 /**
  * Explica en palabras del asesor por qué Meta no dejó enviar el mensaje y qué
@@ -151,6 +152,12 @@ export async function POST(req: Request) {
     //    la ficha. Es lo que hace que la marca de contactado sirva en la
     //    práctica: nadie toca un interruptor después de contestar.
     await marcarContactado(conversation.leadId, senderId);
+
+    // En los chats de WhatsApp con "pausa hasta reactivar" (lib/pausaAli.ts),
+    // responder una persona deja a Ali en pausa hasta que la reactiven.
+    if (conversation.platform === WA_PLATFORM) {
+      await pausarSiCorresponde(conversation.id, (session.user as any).name || "Un asesor", "respondió una persona");
+    }
 
     // 6. Mover la conversación al tope de la bandeja: crear el mensaje por sí
     //    solo no toca updatedAt, que es el campo por el que se ordena.

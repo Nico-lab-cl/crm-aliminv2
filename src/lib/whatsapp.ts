@@ -110,6 +110,85 @@ export async function enviarArchivoWhatsapp(
   return d.messages?.[0]?.id ?? null;
 }
 
+/**
+ * Sube un archivo a WhatsApp (API de medios) para mandarlo por su id. Lo usa el
+ * CRM web cuando una persona adjunta una foto o un PDF propio. Devuelve el id.
+ */
+export async function subirMedioWhatsapp(datos: Uint8Array, mime: string, nombre: string, desde?: string | null): Promise<string> {
+  const token = process.env.WHATSAPP_TOKEN;
+  const numero = desde || numeroPrincipal();
+  if (!token || !numero) throw new ErrorWhatsapp("WhatsApp no está configurado (faltan WHATSAPP_TOKEN o WHATSAPP_PHONE_NUMBER_ID).", null);
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", mime);
+  form.append("file", new Blob([datos as BlobPart], { type: mime }), nombre);
+  const res = await fetch(`https://graph.facebook.com/${VERSION}/${numero}/media`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}` },
+    body: form,
+    signal: AbortSignal.timeout(60000),
+  });
+  const d = (await res.json().catch(() => ({}))) as { id?: string; error?: ErrorWhatsapp["detalle"] };
+  if (!res.ok || !d.id) {
+    throw new ErrorWhatsapp(`WhatsApp no aceptó el archivo (${res.status}): ${d.error?.message || "sin detalle"}`, d.error ?? null);
+  }
+  return d.id;
+}
+
+/** Manda una imagen o un documento ya subido con subirMedioWhatsapp. Devuelve el wamid. */
+export async function enviarMedioWhatsapp(
+  waId: string,
+  medio: { id: string; tipo: "imagen" | "pdf"; nombre: string; leyenda?: string | null },
+  desde?: string | null
+): Promise<string | null> {
+  const leyenda = medio.leyenda?.trim() ? medio.leyenda.trim().slice(0, 1000) : undefined;
+  const d = await llamar(
+    {
+      recipient_type: "individual",
+      to: waId.replace(/\D/g, ""),
+      ...(medio.tipo === "imagen"
+        ? { type: "image", image: { id: medio.id, ...(leyenda ? { caption: leyenda } : {}) } }
+        : { type: "document", document: { id: medio.id, filename: medio.nombre, ...(leyenda ? { caption: leyenda } : {}) } }),
+    },
+    desde
+  );
+  return d.messages?.[0]?.id ?? null;
+}
+
+/** Máximo que se guarda en la base de lo que manda el cliente (fotos, PDF, audios). */
+const MAX_MEDIO_CLIENTE = 16 * 1024 * 1024;
+
+/**
+ * Descarga un archivo que mandó el cliente: primero se pide la URL con el id
+ * del medio y después se baja con el mismo token (la URL vence en minutos).
+ * Devuelve null si falla o si pesa demasiado. Nunca lanza.
+ */
+export async function descargarMedioWhatsapp(mediaId: string): Promise<{ datos: Buffer; mime: string } | null> {
+  const token = process.env.WHATSAPP_TOKEN;
+  if (!token) return null;
+  try {
+    const info = await fetch(`https://graph.facebook.com/${VERSION}/${mediaId}`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    const d = (await info.json().catch(() => ({}))) as { url?: string; mime_type?: string; file_size?: number };
+    if (!info.ok || !d.url) throw new Error(`media ${info.status}`);
+    if (d.file_size && d.file_size > MAX_MEDIO_CLIENTE) {
+      console.warn(`[whatsapp] El archivo ${mediaId} pesa ${d.file_size} bytes; no se guarda.`);
+      return null;
+    }
+    const res = await fetch(d.url, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000) });
+    if (!res.ok) throw new Error(`descarga ${res.status}`);
+    const datos = Buffer.from(await res.arrayBuffer());
+    if (datos.length > MAX_MEDIO_CLIENTE) return null;
+    const mime = (d.mime_type || res.headers.get("content-type") || "application/octet-stream").split(";")[0].trim();
+    return { datos, mime };
+  } catch (error) {
+    console.error(`[whatsapp] No se pudo descargar el archivo ${mediaId}:`, error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
 /** Marca el mensaje del cliente como leído y muestra "escribiendo…" mientras Ali piensa. Nunca lanza. */
 export async function marcarLeidoWhatsapp(mensajeId: string, desde?: string | null) {
   try {
@@ -172,8 +251,10 @@ export interface WhatsappMensaje {
   text?: { body?: string };
   button?: { text?: string };
   interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
-  image?: { caption?: string };
+  image?: { id?: string; mime_type?: string; caption?: string };
   audio?: { id?: string; mime_type?: string };
+  video?: { id?: string; mime_type?: string; caption?: string };
+  document?: { id?: string; mime_type?: string; filename?: string; caption?: string };
   /** Si llegó desde un anuncio de clic a WhatsApp. */
   referral?: { source_url?: string; source_id?: string; source_type?: string; headline?: string; body?: string; ctwa_clid?: string };
 }

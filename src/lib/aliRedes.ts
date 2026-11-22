@@ -7,6 +7,7 @@ import { memoriaDelLead } from "./memoriaLead";
 import { agenteParaLead } from "./agenteIA";
 import { oficinaDice } from "./oficina";
 import { aliWhatsappActiva, enviarArchivoWhatsapp, enviarTextoWhatsapp, marcarLeidoWhatsapp, numeroDePsid, waIdDePsid } from "./whatsapp";
+import { aliPausada, asegurarTablaPausas, pausarSiCorresponde, usaPausaHastaReactivar } from "./pausaAli";
 import {
   AUTO_SOURCE,
   EVENTO_SOURCE,
@@ -292,6 +293,18 @@ async function responder(a: AvisoMeta) {
   const ahora = Date.now();
   if (ahora - ultimo.createdAt.getTime() > VENTANA_META_MS) return;
 
+  // Pausada (lib/pausaAli.ts): no responde hasta que alguien la reactive desde
+  // el CRM web. Se le avisa a la persona que atiende, como cuando hay asesor.
+  if (await aliPausada(conv.id)) {
+    console.log(`[ali-redes] ${conv.id}: Ali está en pausa en este chat; no responde.`);
+    await avisarMensajeAlAsesor(conv, plataforma, ultimo);
+    return;
+  }
+  // En los chats con "pausa hasta reactivar" la pausa reemplaza la regla de
+  // las 2 h: escribir una persona o derivar ya pausan a Ali, así que si llegó
+  // hasta acá es porque alguien la reactivó y le toca responder.
+  const conPausa = usaPausaHastaReactivar(conv);
+
   // Asesor atendiendo: lo último que salió de nuestro lado es de un asesor y
   // lo escribió hace menos de 2 h. Ahí Ali espera (retoma si el cliente pasa
   // 2 h sin respuesta). Un mensaje de asesor más viejo, o uno al que Ali ya le
@@ -299,7 +312,7 @@ async function responder(a: AvisoMeta) {
   const ultimoNuestro = [...conversacion].reverse().find((m) => m.senderType === "advisor" || m.senderType === ALI_SENDER);
   const asesorActivo =
     ultimoNuestro?.senderType === "advisor" && ahora - ultimoNuestro.createdAt.getTime() < ESPERA_ASESOR_MS;
-  if (asesorActivo && ahora - ultimo.createdAt.getTime() < ESPERA_ASESOR_MS) {
+  if (!conPausa && asesorActivo && ahora - ultimo.createdAt.getTime() < ESPERA_ASESOR_MS) {
     console.log(`[ali-redes] ${conv.id}: lo atiende un asesor; Ali retoma solo si pasan 2 h sin respuesta.`);
     await avisarMensajeAlAsesor(conv, plataforma, ultimo);
     return;
@@ -308,6 +321,7 @@ async function responder(a: AvisoMeta) {
   // cliente siga escribiendo ("ok, gracias"), para que no conteste encima del
   // asesor. Si en 2 h nadie le respondió, retoma (Nicolás, 16-11-2026).
   const recienDerivada =
+    !conPausa &&
     ultimoNuestro?.senderType === ALI_SENDER &&
     ultimoNuestro.sourceType === HANDOFF_SOURCE &&
     ahora - ultimoNuestro.createdAt.getTime() < ESPERA_ASESOR_MS;
@@ -411,6 +425,8 @@ async function responder(a: AvisoMeta) {
     return;
   }
   if (await asesorEscribioDesde(conv.id, inicio)) return;
+  // La pausaron mientras Ali pensaba la respuesta.
+  if (await aliPausada(conv.id)) return;
 
   let conversationId = conv.id;
   const fuente = (i: number, total: number) => (r.derivacion && i === total - 1 ? HANDOFF_SOURCE : "DIRECT");
@@ -484,6 +500,8 @@ async function responder(a: AvisoMeta) {
     if (leadId) await pasarAlAsesor(leadId, `agendó una visita a ${r.visita.proyecto} el ${r.visita.fecha} a las ${r.visita.hora}`);
   }
   if (r.derivacion) {
+    // En los chats con "pausa hasta reactivar", derivar deja a Ali en pausa.
+    await pausarSiCorresponde(conversationId, "Ali", "derivó a un asesor");
     const pasado = leadId ? await pasarAlAsesor(leadId, `pidió un asesor: ${r.derivacion.motivo}`, r.derivacion.resumen) : false;
     // Sin lead de Ali (todavía no da sus datos, o ya era de un asesor): aviso de siempre.
     if (!pasado) await derivar(conversationId, plataforma, r.derivacion);
@@ -860,6 +878,7 @@ export async function recuperarSinRespuesta() {
   const modo = modoAliRedes();
   const plataformas = plataformasConAli();
   if (!plataformas.length) return { reintentos: 0, aPersona: 0 };
+  await asegurarTablaPausas();
 
   const filas = await prisma.$queryRaw<{ id: string; platform: string; lead_id: string | null; fallas: number }[]>`
     SELECT c.id, c.platform, c."leadId" AS lead_id,
@@ -887,6 +906,7 @@ export async function recuperarSinRespuesta() {
           WHERE n."conversationId" = c.id AND n."sourceType" = ${EVENTO_SOURCE}
             AND n.text LIKE ${NOTA_PERSONA + "%"} AND n."createdAt" > cl.fecha
        )
+       AND NOT EXISTS (SELECT 1 FROM public.ali_pausas p WHERE p.conversation_id = c.id)
      ORDER BY cl.fecha
      LIMIT 20`;
 
@@ -909,6 +929,7 @@ export async function recuperarSinRespuesta() {
 /** Después de los reintentos: si el lead es de Ali pasa a la rueda; siempre queda la nota ⚠️ en la bandeja. */
 async function pasarAPersona(conversationId: string, leadId: string | null) {
   const motivo = `Ali no pudo responder después de ${MAX_INTENTOS} intentos`;
+  await pausarSiCorresponde(conversationId, "Ali", "no pudo responder y pasó a una persona");
   const pasado = leadId ? await pasarAlAsesor(leadId, motivo) : false;
   // Solo push al asesor: el grupo de leads no recibe fallas técnicas (Nicolás, 22-11-2026).
   await pedirUnaPersona(conversationId, `${motivo}. El cliente está esperando: respóndele desde aquí.`, motivo, { avisar: !pasado, alGrupo: false });
@@ -924,6 +945,7 @@ export async function retomarPendientes() {
   const modo = modoAliRedes();
   const plataformas = plataformasConAli();
   if (!plataformas.length) return 0;
+  await asegurarTablaPausas();
 
   const filas = await prisma.$queryRaw<{ id: string; platform: string; lead_id: string | null; fallas: number }[]>`
     SELECT c.id, c.platform, c."leadId" AS lead_id,
@@ -950,6 +972,7 @@ export async function retomarPendientes() {
           WHERE n."conversationId" = c.id AND n."sourceType" = ${EVENTO_SOURCE}
             AND n.text LIKE ${NOTA_PERSONA + "%"} AND n."createdAt" > cl.fecha
        )
+       AND NOT EXISTS (SELECT 1 FROM public.ali_pausas p WHERE p.conversation_id = c.id)
      LIMIT 20`;
 
   let n = 0;
@@ -1002,6 +1025,22 @@ export async function atenderWhatsapp(
     programar({ conversationId, plataforma: "whatsapp", via: "dm", texto: "", publicacion, nueva: false, conTexto: true });
   } catch (error) {
     console.error("[ali-whatsapp] Error atendiendo el mensaje:", error);
+  }
+}
+
+/**
+ * Recién reactivada desde el CRM web (lib/pausaAli.ts): si lo último del chat
+ * es un mensaje del cliente sin responder, Ali lo responde ahora y no espera al
+ * barrido de cada 10 minutos. responder() vuelve a revisar todo (24 h, pausa,
+ * último mensaje), así que llamarla de más no hace daño. Nunca lanza.
+ */
+export function atenderAlReactivar(conversationId: string, plataforma: string) {
+  try {
+    // Solo WhatsApp: en IG/FB el modo "prueba" se revisa en otro lado y esto lo saltaría.
+    if (plataforma !== "whatsapp" || !plataformasConAli().includes("whatsapp")) return;
+    programar({ conversationId, plataforma: "whatsapp", via: "dm", texto: "", nueva: false, conTexto: true });
+  } catch (error) {
+    console.error(`[ali-redes] No se pudo retomar ${conversationId} al reactivar:`, error);
   }
 }
 

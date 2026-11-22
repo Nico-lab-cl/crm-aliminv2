@@ -6,11 +6,50 @@ import { anotar } from "@/lib/respuestaAutomatica";
 import { transcribirAudioWhatsapp, transcripcionActiva } from "@/lib/transcribir";
 import {
   WA_PLATFORM,
+  descargarMedioWhatsapp,
   describirMensajeWhatsapp,
   numerosWhatsapp,
   psidWhatsapp,
   type WhatsappMensaje,
 } from "@/lib/whatsapp";
+import { rutaDelAdjunto } from "@/lib/media";
+
+type MedioCliente = { messageId: string; mediaId: string; kind: "image" | "audio" | "video" | "document"; fileName: string | null };
+
+/** El archivo que trae el mensaje del cliente, si trae uno que se pueda guardar. */
+function medioDelMensaje(m: WhatsappMensaje): Omit<MedioCliente, "messageId"> | null {
+  if (m.type === "image" && m.image?.id) return { mediaId: m.image.id, kind: "image", fileName: null };
+  if (m.type === "audio" && m.audio?.id) return { mediaId: m.audio.id, kind: "audio", fileName: null };
+  if (m.type === "video" && m.video?.id) return { mediaId: m.video.id, kind: "video", fileName: null };
+  if (m.type === "document" && m.document?.id) return { mediaId: m.document.id, kind: "document", fileName: m.document.filename || null };
+  return null;
+}
+
+/**
+ * Baja el archivo de WhatsApp y lo deja en MessageMedia, para verlo en la
+ * bandeja y en el CRM web (decisión de Nicolás, 22-11-2026). Antes solo
+ * quedaba el texto "[Imagen]". Nunca lanza.
+ */
+async function guardarMedioCliente(m: MedioCliente) {
+  try {
+    const archivo = await descargarMedioWhatsapp(m.mediaId);
+    if (!archivo) return;
+    const media = await (prisma as any).messageMedia.create({
+      data: {
+        messageId: m.messageId,
+        kind: m.kind,
+        mimeType: archivo.mime,
+        fileName: m.fileName ? m.fileName.slice(0, 200) : null,
+        sizeBytes: archivo.datos.length,
+        data: archivo.datos,
+      },
+      select: { id: true },
+    });
+    await prisma.message.update({ where: { id: m.messageId }, data: { mediaUrl: rutaDelAdjunto(media.id) } });
+  } catch (error) {
+    console.error(`[whatsapp] No se pudo guardar el archivo del mensaje ${m.messageId}:`, error);
+  }
+}
 
 /**
  * Webhook de WhatsApp (Cloud API de Meta). Se configura en la app "Chat redes
@@ -65,6 +104,8 @@ export async function POST(req: Request) {
     const pendientes: { conversationId: string; mensajeId: string; publicacion: string | null; desde: string | null }[] = [];
     // Audios que se transcriben antes de que responda Ali (lib/transcribir.ts).
     const audios: { wamid: string; mediaId: string }[] = [];
+    // Fotos, PDF, audios y videos que se guardan para verlos en la bandeja.
+    const medios: MedioCliente[] = [];
 
     for (const entry of body.entry ?? []) {
       for (const cambio of (entry.changes ?? []) as Cambio[]) {
@@ -97,7 +138,8 @@ export async function POST(req: Request) {
 
           // Si llegó desde un anuncio de clic a WhatsApp, queda el anuncio con el mensaje.
           const anuncio = m.referral?.headline || m.referral?.body || null;
-          await prisma.message.create({
+          const guardado = await prisma.message.create({
+            select: { id: true },
             data: {
               conversationId: conv.id,
               text: texto,
@@ -114,6 +156,8 @@ export async function POST(req: Request) {
           }
           if (nueva || !conv.leadId) await vincularLeadWhatsapp(conv.id, m.from, nombre);
 
+          const medio = medioDelMensaje(m);
+          if (medio) medios.push({ ...medio, messageId: guardado.id });
           if (m.type === "audio" && m.audio?.id && transcripcionActiva()) audios.push({ wamid: m.id, mediaId: m.audio.id });
           pendientes.push({ conversationId: conv.id, mensajeId: m.id, publicacion: anuncio, desde: numeroEmpresa });
         }
@@ -122,6 +166,7 @@ export async function POST(req: Request) {
 
     if (pendientes.length) {
       setImmediate(async () => {
+        for (const m of medios) await guardarMedioCliente(m);
         for (const a of audios) await transcribirAudioWhatsapp(a.wamid, a.mediaId);
         for (const p of pendientes) await atenderWhatsapp(p.conversationId, p.mensajeId, p.publicacion, p.desde);
       });
