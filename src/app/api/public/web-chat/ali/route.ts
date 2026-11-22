@@ -6,6 +6,7 @@ import {
   HANDOFF_SOURCE,
   avisarDerivacion,
   contextoParaAli,
+  esFallaDeAli,
   conversacionDelVisitante,
   estadoAli,
 } from "@/lib/ali";
@@ -163,6 +164,8 @@ export async function POST(req: Request) {
         resumen: derivacion.resumen,
         asignadoId: lead?.assignedToId || null,
         asignadoNombre: lead?.assignedTo?.name || null,
+        // Una falla técnica de Ali avisa solo por push, no al grupo de leads.
+        alGrupo: !esFallaDeAli(derivacion.motivo),
       });
     }
 

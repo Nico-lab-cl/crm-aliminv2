@@ -1,7 +1,7 @@
 import prisma from "./prisma";
 import { BARBARA_ID, MARCELA_ID, ORLANDO_ID, getNextAdvisorId } from "./assignment";
 import { createNotification } from "./notifications";
-import { ALI_SENDER, DUENO_MIENTRAS_ALI, FUENTES_IA, HANDOFF_SOURCE, NOTA_PERSONA, avisarDerivacion, pedirUnaPersona } from "./ali";
+import { ALI_SENDER, DUENO_MIENTRAS_ALI, FUENTES_IA, HANDOFF_SOURCE, NOTA_PERSONA, avisarDerivacion, esFallaDeAli, pedirUnaPersona } from "./ali";
 import { ASESORES_ANUNCIABLES, enviarAlGrupo } from "./avisosWhatsappLeads";
 import { memoriaDelLead } from "./memoriaLead";
 import { agenteParaLead } from "./agenteIA";
@@ -792,8 +792,9 @@ export async function pasarAlAsesor(leadId: string, motivo: string, resumen?: st
       type: "NEW_LEAD",
     }).catch((e) => console.error("[ali-redes] No salió el push del paso al asesor:", e));
 
-    // En el grupo están todos los asesores: nunca teléfono ni correo.
-    await avisarAlGrupo(
+    // En el grupo están todos los asesores: nunca teléfono ni correo. Una
+    // falla técnica de Ali no se anuncia ahí (lo ven los gerentes), solo el push.
+    if (!esFallaDeAli(motivo)) await avisarAlGrupo(
       [
         `🤖➡️👤 *Ali pasa un lead · ${red}*`,
         "",
@@ -909,7 +910,8 @@ export async function recuperarSinRespuesta() {
 async function pasarAPersona(conversationId: string, leadId: string | null) {
   const motivo = `Ali no pudo responder después de ${MAX_INTENTOS} intentos`;
   const pasado = leadId ? await pasarAlAsesor(leadId, motivo) : false;
-  await pedirUnaPersona(conversationId, `${motivo}. El cliente está esperando: respóndele desde aquí.`, motivo, { avisar: !pasado });
+  // Solo push al asesor: el grupo de leads no recibe fallas técnicas (Nicolás, 22-11-2026).
+  await pedirUnaPersona(conversationId, `${motivo}. El cliente está esperando: respóndele desde aquí.`, motivo, { avisar: !pasado, alGrupo: false });
 }
 
 /* ── Retomar cuando el asesor no responde ─────────────────────────────── */

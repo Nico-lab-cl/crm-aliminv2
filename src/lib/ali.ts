@@ -221,6 +221,11 @@ export async function contextoParaAli(conversationId: string) {
   };
 }
 
+/** Motivo de una falla técnica de Ali ("Ali no pudo responder…"): no se anuncia en el grupo de leads. */
+export function esFallaDeAli(motivo: string | null | undefined) {
+  return /^Ali no pudo responder/i.test(motivo || "");
+}
+
 /**
  * Avisa que un cliente necesita una persona: push y mensaje al grupo de
  * WhatsApp de leads. Nunca lanza: un aviso caído no puede tumbar el chat.
@@ -237,6 +242,7 @@ export async function avisarDerivacion({
   asignadoId,
   asignadoNombre,
   canal = "Chat web",
+  alGrupo = true,
 }: {
   leadId: string | null;
   nombre: string;
@@ -246,6 +252,12 @@ export async function avisarDerivacion({
   asignadoNombre: string | null;
   /** Dónde está conversando: "Chat web", "Instagram" o "Facebook". */
   canal?: string;
+  /**
+   * false: solo el push, sin mensaje al grupo de leads. Para las fallas
+   * técnicas de Ali, que los gerentes leían como un error del sistema
+   * (Nicolás, 22-11-2026).
+   */
+  alGrupo?: boolean;
 }) {
   const destinatarios = new Set<string>(asignadoId ? [asignadoId] : ASESORES_ANUNCIABLES);
 
@@ -264,6 +276,7 @@ export async function avisarDerivacion({
   );
 
   const whatsapp = (async () => {
+    if (!alGrupo) return;
     const url = process.env.EVOLUTION_API_URL?.replace(/\/+$/, "");
     const apiKey = process.env.EVOLUTION_API_KEY;
     const grupo = process.env.LEADS_WHATSAPP_GROUP;
@@ -315,7 +328,7 @@ export async function pedirUnaPersona(
   conversationId: string,
   nota: string,
   motivo: string,
-  opciones: { avisar?: boolean } = {}
+  opciones: { avisar?: boolean; alGrupo?: boolean } = {}
 ) {
   try {
     const reciente = await prisma.message.findFirst({
@@ -350,6 +363,7 @@ export async function pedirUnaPersona(
       asignadoId,
       asignadoNombre: asignadoId ? lead?.assignedTo?.name || null : null,
       canal,
+      alGrupo: opciones.alGrupo ?? true,
     });
   } catch (error) {
     console.error(`[ali] No se pudo pedir una persona para ${conversationId}:`, error);
