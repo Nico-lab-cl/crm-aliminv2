@@ -631,6 +631,8 @@ async function derivar(conversationId: string, plataforma: Plataforma, d: { moti
 /* ── Contacto → lead ──────────────────────────────────────────────────── */
 
 const CORREO = /[^\s@<>()]+@[^\s@<>()]+\.[a-z]{2,}/i;
+/** Errores de tipeo evidentes en el dominio: el respaldo automático no los guarda (Ali los corrige y pregunta). */
+const CORREO_MAL_ESCRITO = /@(gmial|gmai|gamil|gnail|hotmial|hotmal|hormail|outlok|yaho)\.|\.(vom|con|cpm|xom|cim|comm|clm)$/i;
 const CELULAR = /(?:\+?\s*56[\s.-]*)?9[\s.-]*\d{4}[\s.-]*\d{4}/;
 
 /** Celular chileno a +569XXXXXXXX; otros números se dejan con su + si tienen 8 a 15 dígitos. */
@@ -647,12 +649,38 @@ function normalizarCorreo(valor: string | null | undefined) {
   return /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/.test(v) && v.length <= 120 ? v : null;
 }
 
+/**
+ * ¿El correo que tiene el lead lo puso Ali desde este chat? (nota "✍️ Ali
+ * completó … correo", "✍️ Ali corrigió el correo" o "🆕 Ali creó el lead").
+ */
+async function aliGuardoElCorreo(conversationId: string) {
+  const nota = await prisma.message.findFirst({
+    where: {
+      conversationId,
+      sourceType: EVENTO_SOURCE,
+      OR: [
+        { text: { startsWith: "✍️ Ali completó en la ficha", contains: "correo" } },
+        { text: { startsWith: "✍️ Ali corrigió el correo" } },
+        { text: { startsWith: "🆕 Ali creó el lead" } },
+      ],
+    },
+    select: { id: true },
+  });
+  return Boolean(nota);
+}
+
 /** Respaldo sin IA: teléfono o correo escritos por el cliente que Ali no guardó. */
 export function detectarContacto(textos: string[]) {
   let telefono: string | null = null;
   let email: string | null = null;
   for (const t of [...textos].reverse()) {
-    if (!email) email = normalizarCorreo(t.match(CORREO)?.[0]);
+    // "jani.lemus @gmail.com" (espacios alrededor de la @) también cuenta; el
+    // dominio no se corrige: eso lo hace Ali, que pregunta si quedó bien.
+    if (!email) {
+      const encontrado = normalizarCorreo(t.replace(/\s*@\s*/g, "@").match(CORREO)?.[0]);
+      // ".vom", ".con", "gmial"…: mal escrito a la vista; no se guarda así.
+      email = encontrado && !CORREO_MAL_ESCRITO.test(encontrado) ? encontrado : null;
+    }
     if (!telefono) {
       const m = t.match(CELULAR)?.[0];
       telefono = m ? normalizarTelefono(m) : null;
@@ -706,9 +734,26 @@ async function procesarContacto(
       if (!lead.lastName && resto.length) datos.lastName = resto.join(" ");
       if (!lead.phone && telefono) datos.phone = telefono;
       if (!lead.email && email && !(await prisma.lead.findUnique({ where: { email }, select: { id: true } }))) datos.email = email;
-      const nuevos = Object.keys(datos);
+      // Corrección (Nicolás, 22-11-2026): Ali guarda al tiro un correo con un
+      // error evidente ya corregido y pregunta si quedó bien; si la persona lo
+      // corrige, Ali manda el nuevo. Solo se reemplaza un correo que Ali misma
+      // dejó en la ficha desde este chat, y solo con el que manda Ali (nunca
+      // con el respaldo automático, que podría traer el correo mal escrito).
+      const correoDeAli = normalizarCorreo(deAli?.email);
+      let corregido = false;
+      if (
+        lead.email &&
+        correoDeAli &&
+        correoDeAli !== lead.email &&
+        (await aliGuardoElCorreo(conv.id)) &&
+        !(await prisma.lead.findUnique({ where: { email: correoDeAli }, select: { id: true } }))
+      ) {
+        datos.email = correoDeAli;
+        corregido = true;
+      }
+      const nuevos = Object.keys(datos).filter((k) => !(corregido && k === "email"));
       const vincular = conv.leadId !== lead.id;
-      if (!nuevos.length && !vincular) return;
+      if (!nuevos.length && !vincular && !corregido) return;
 
       await prisma.lead.update({
         where: { id: lead.id },
@@ -722,6 +767,7 @@ async function procesarContacto(
         const nombres: Record<string, string> = { firstName: "nombre", lastName: "apellido", phone: "teléfono", email: "correo" };
         await anotar(conv.id, `✍️ Ali completó en la ficha: ${nuevos.map((k) => nombres[k]).join(", ")}.`);
       }
+      if (corregido) await anotar(conv.id, `✍️ Ali corrigió el correo en la ficha.`);
       return;
     }
 
