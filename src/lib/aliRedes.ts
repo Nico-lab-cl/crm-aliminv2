@@ -211,7 +211,8 @@ interface RespuestaSitio {
   silencio?: boolean;
   contacto: { nombre: string | null; telefono: string | null; email: string | null; interes: string | null } | null;
   derivacion: { motivo: string; resumen: string } | null;
-  visita: { proyecto: string; fecha: string; hora: string } | null;
+  /** resumen: lo que Ali le deja al asesor que acompaña la visita (sin teléfono ni correo). */
+  visita: { proyecto: string; fecha: string; hora: string; resumen?: string | null } | null;
   /** Texto para responder en público bajo el comentario (sin precios). */
   publica: string | null;
   /** Planos, brochures y ebooks que Ali eligió mandar después de sus mensajes. */
@@ -495,9 +496,19 @@ async function responder(a: AvisoMeta) {
   const leadId =
     (await prisma.conversation.findUnique({ where: { id: conversationId }, select: { leadId: true } }))?.leadId || null;
   if (r.visita) {
-    await anotar(conversationId, `📅 Ali agendó una visita a ${r.visita.proyecto} el ${r.visita.fecha} a las ${r.visita.hora}.`);
-    // La visita la guía un asesor: pasa de inmediato.
-    if (leadId) await pasarAlAsesor(leadId, `agendó una visita a ${r.visita.proyecto} el ${r.visita.fecha} a las ${r.visita.hora}`);
+    const cuando = `${r.visita.proyecto} el ${r.visita.fecha} a las ${r.visita.hora}`;
+    const resumen = (r.visita.resumen || "").trim().slice(0, 900) || null;
+    await anotar(conversationId, `📅 Ali agendó una visita a ${cuando}.${resumen ? `\n📝 Para el asesor: ${resumen}` : ""}`);
+    if (leadId) {
+      // El asesor recibe todo el contexto (Nicolás, 22-11-2026): el resumen
+      // queda en la ficha del lead y le llega en el aviso; el chat completo lo
+      // ve en la bandeja (filtroBandeja incluye los chats con visita de Ali).
+      await notaDeVisitaEnFicha(leadId, plataforma, cuando, resumen);
+      // La visita la guía un asesor: pasa de inmediato.
+      const pasado = await pasarAlAsesor(leadId, `agendó una visita a ${cuando}`, resumen);
+      // El lead ya era de un asesor (no lo creó Ali): se le avisa a él.
+      if (!pasado) await avisarVisitaAlAsesor(leadId, plataforma, cuando, resumen);
+    }
   }
   if (r.derivacion) {
     // En los chats con "pausa hasta reactivar", derivar deja a Ali en pausa.
@@ -851,7 +862,8 @@ export async function pasarAlAsesor(leadId: string, motivo: string, resumen?: st
     await createNotification({
       userId: asesorId,
       title: `🤖 Ali te pasa un lead de ${red}`,
-      body: `${nombre} · ${motivo}${interes ? ` · ${interes}` : ""}`.slice(0, 180),
+      // Con resumen (derivación o visita) va lo que conversó con Ali; sin él, lo que busca.
+      body: `${nombre} · ${motivo}${resumen ? ` · ${resumen}` : interes ? ` · ${interes}` : ""}`.slice(0, 300),
       leadId,
       type: "NEW_LEAD",
     }).catch((e) => console.error("[ali-redes] No salió el push del paso al asesor:", e));
@@ -876,6 +888,50 @@ export async function pasarAlAsesor(leadId: string, motivo: string, resumen?: st
   } catch (error) {
     console.error(`[ali-redes] No se pudo pasar el lead ${leadId} al asesor:`, error);
     return false;
+  }
+}
+
+/**
+ * Deja en la ficha del lead (lead_seguimientos) la visita que agendó Ali con
+ * el resumen de la conversación, para que el asesor lo vea en la ficha del
+ * CRM móvil y del CRM web. Va como NOTA con resultado propio: el calificador
+ * IA reescribe sus notas con resultado "IA" y un seguimiento tipo VISITA se
+ * leería como "llegó a la visita" (visitaRealizada.ts). Nunca lanza.
+ */
+async function notaDeVisitaEnFicha(leadId: string, plataforma: Plataforma, cuando: string, resumen: string | null) {
+  try {
+    const nota = `📅 Ali agendó por ${RED[plataforma]} una visita a ${cuando}.${resumen ? `\n${resumen}` : ""}`.slice(0, 1200);
+    await prisma.$executeRaw`
+      INSERT INTO lead_seguimientos (lead_id, usuario_id, tipo, resultado, nota)
+      VALUES (${leadId}, NULL, 'NOTA', 'Visita agendada por Ali', ${nota})`;
+  } catch (error) {
+    console.error(`[ali-redes] No se pudo dejar la nota de visita en la ficha de ${leadId}:`, error);
+  }
+}
+
+/**
+ * La visita la agendó Ali, pero el lead ya era de un asesor (no lo creó
+ * Ali, así que pasarAlAsesor no lo mueve): push a ese asesor con el resumen.
+ * Si el lead no tiene asesor, la sincronización de visitas lo asigna por la
+ * rueda y avisa. Nunca lanza.
+ */
+async function avisarVisitaAlAsesor(leadId: string, plataforma: Plataforma, cuando: string, resumen: string | null) {
+  try {
+    const lead = await prisma.lead.findUnique({
+      where: { id: leadId },
+      select: { firstName: true, lastName: true, assignedToId: true },
+    });
+    if (!lead?.assignedToId || lead.assignedToId === DUENO_MIENTRAS_ALI) return;
+    const nombre = [lead.firstName, lead.lastName].filter(Boolean).join(" ") || "Tu cliente";
+    await createNotification({
+      userId: lead.assignedToId,
+      title: `🤖 Ali agendó una visita por ${RED[plataforma]}`,
+      body: `${nombre} · ${cuando}${resumen ? ` · ${resumen}` : ""}`.slice(0, 300),
+      leadId,
+      type: "VISIT",
+    });
+  } catch (error) {
+    console.error(`[ali-redes] No salió el aviso de visita del lead ${leadId}:`, error);
   }
 }
 

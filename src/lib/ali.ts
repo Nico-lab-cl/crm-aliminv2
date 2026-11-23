@@ -66,6 +66,9 @@ export function filtroBandeja(usuario: { id: string; role?: string | null }): Pr
           { messages: { some: { senderType: ALI_SENDER, sourceType: HANDOFF_SOURCE } } },
           // Ali no pudo responder o el mensaje es delicado: lo tiene que ver una persona.
           { messages: { some: { sourceType: "EVENTO", text: { startsWith: NOTA_PERSONA } } } },
+          // Ali agendó una visita: el asesor que la acompaña tiene que ver el
+          // chat completo, aunque el lead no lo haya creado Ali (Nicolás, 22-11-2026).
+          { messages: { some: { sourceType: "EVENTO", text: { startsWith: "📅 Ali agendó" } } } },
           // Lead de Ali que ya salió de las manos de Nicolás hacia un asesor.
           { lead: { is: { source: { in: FUENTES_IA }, assignedToId: { not: DUENO_MIENTRAS_ALI } } } },
         ],

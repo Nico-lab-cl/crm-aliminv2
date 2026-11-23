@@ -381,7 +381,7 @@ async function syncExternalBookingsInterno({ ultimosDias }: OpcionesSync) {
         // Check if there is an existing lead with this email
         const existingLead = await (prisma as any).lead.findUnique({
           where: { email: emailLower },
-          select: { id: true, assignedToId: true }
+          select: { id: true, assignedToId: true, notes: true }
         });
 
         let leadId;
@@ -406,7 +406,11 @@ async function syncExternalBookingsInterno({ ultimosDias }: OpcionesSync) {
               visitProject: booking.proyecto,
               status: "VISITA",
               lastActivity: "Visita programada (Web)",
-              notes: `Visita programada vía web: ${booking.proyecto} para el ${dateStr} a las ${timePart}`,
+              // Se suma a las notas que ya tenía (por ejemplo, lo que anotó Ali
+              // de la conversación): antes las reemplazaba y el asesor perdía el contexto.
+              notes: [existingLead.notes, `Visita programada vía web: ${booking.proyecto} para el ${dateStr} a las ${timePart}`]
+                .filter(Boolean)
+                .join("\n"),
               assignedToId: assignedToId,
             }
           });
