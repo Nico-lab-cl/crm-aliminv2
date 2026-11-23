@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import {
   ArrowLeft, Send, User, Facebook, Instagram, ShieldCheck, MessageCircle, Globe,
-  Paperclip, Mic, Trash2, Square, Loader2, AlertCircle,
+  Paperclip, Mic, Trash2, Square, Loader2, AlertCircle, ThumbsUp, ThumbsDown,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
@@ -42,6 +42,14 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
   const [error, setError] = useState<string | null>(null);
   const [sinAcceso, setSinAcceso] = useState(false);
 
+  // 👍/👎 a las respuestas de Ali en redes y WhatsApp: llegan a Agentes IA →
+  // Pruebas del equipo, donde se convierten en reglas (Nicolás, 22-11-2026).
+  const [votos, setVotos] = useState<Record<string, { voto: "bien" | "mal"; correccion: string | null; autor: string | null }>>({});
+  const [corrigiendo, setCorrigiendo] = useState<string | null>(null);
+  const [correccion, setCorreccion] = useState("");
+  const [guardandoVoto, setGuardandoVoto] = useState(false);
+  const sePuedeCalificar = ["instagram", "facebook", "whatsapp"].includes(conversation?.platform);
+
   // Grabación de voz
   const [grabando, setGrabando] = useState(false);
   const [msGrabados, setMsGrabados] = useState(0);
@@ -76,6 +84,37 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
       grabadora.current?.stream.getTracks().forEach((t) => t.stop());
     };
   }, []);
+
+  useEffect(() => {
+    if (!sePuedeCalificar) return;
+    fetch(`/api/messages/calificar?conversationId=${params.id}`)
+      .then((r) => r.json())
+      .then((d) => setVotos(d.votos || {}))
+      .catch(() => {});
+  }, [params.id, sePuedeCalificar]);
+
+  const calificar = async (messageId: string, voto: "bien" | "mal" | null, texto?: string) => {
+    setGuardandoVoto(true);
+    try {
+      const res = await fetch("/api/messages/calificar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: params.id, messageId, voto, correccion: texto }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(d.error || "No se pudo guardar la calificación.");
+        return;
+      }
+      setVotos(d.votos || {});
+      setCorrigiendo(null);
+      setCorreccion("");
+    } catch {
+      setError("Sin conexión. Intenta de nuevo.");
+    } finally {
+      setGuardandoVoto(false);
+    }
+  };
 
   const fetchChat = async () => {
     try {
@@ -516,7 +555,64 @@ export default function ChatDetailPage({ params }: { params: { id: string } }) {
                     <ShieldCheck size={10} /> {msg.sender?.name || "Asesor"}
                   </div>
                 )}
+                {esAli && sePuedeCalificar && msg.id && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={guardandoVoto}
+                      onClick={() => calificar(msg.id, votos[msg.id]?.voto === "bien" ? null : "bien")}
+                      aria-label="Ali respondió bien"
+                      className={`p-1.5 rounded-full ${votos[msg.id]?.voto === "bien" ? "bg-emerald-100 text-emerald-700" : "text-slate-400"}`}
+                    >
+                      <ThumbsUp size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={guardandoVoto}
+                      onClick={() => {
+                        if (votos[msg.id]?.voto === "mal" && corrigiendo !== msg.id) return calificar(msg.id, null);
+                        setCorrigiendo(msg.id);
+                        setCorreccion(votos[msg.id]?.correccion || "");
+                      }}
+                      aria-label="Ali respondió mal"
+                      className={`p-1.5 rounded-full ${votos[msg.id]?.voto === "mal" ? "bg-rose-100 text-rose-700" : "text-slate-400"}`}
+                    >
+                      <ThumbsDown size={13} />
+                    </button>
+                    {votos[msg.id]?.autor && <span className="text-[9px] font-bold text-slate-400">{votos[msg.id]?.autor}</span>}
+                  </div>
+                )}
               </div>
+              {esAli && votos[msg.id]?.voto === "mal" && votos[msg.id]?.correccion && corrigiendo !== msg.id && (
+                <div className="mt-1 max-w-[85%] text-[11px] text-rose-700 bg-rose-50 border border-rose-100 rounded-xl px-3 py-1.5 whitespace-pre-wrap">
+                  Debió decir: {votos[msg.id]?.correccion}
+                </div>
+              )}
+              {esAli && corrigiendo === msg.id && (
+                <div className="mt-1 w-[85%] bg-white border border-rose-200 rounded-xl p-2 space-y-2">
+                  <textarea
+                    value={correccion}
+                    onChange={(e) => setCorreccion(e.target.value)}
+                    rows={3}
+                    maxLength={2000}
+                    placeholder="¿Qué debió decir Ali? (opcional, pero ayuda mucho)"
+                    className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 outline-none"
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <button type="button" onClick={() => setCorrigiendo(null)} className="text-xs font-bold text-slate-500 px-3 py-1.5">
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={guardandoVoto}
+                      onClick={() => calificar(msg.id, "mal", correccion)}
+                      className="text-xs font-bold text-white bg-rose-600 rounded-lg px-3 py-1.5 disabled:opacity-50"
+                    >
+                      {guardandoVoto ? "Guardando..." : "Guardar 👎"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
